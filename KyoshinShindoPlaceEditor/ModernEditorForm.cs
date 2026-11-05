@@ -179,9 +179,13 @@ namespace KyoshinShindoPlaceEditor
 				_dirty = false;
 				return "已保存 " + Path.GetFileName(path);
 			}
+			if (action == "clear")
+			{
+				if (_model.ModernClear((string)command["code"], this)) _dirty = true;
+				return null;
+			}
 			if (action == "edit")
 				_model.ModernEdit((string)command["code"], Integer(command, "x"), Integer(command, "y"));
-			else if (action == "clear") _model.ModernEdit((string)command["code"], null, null);
 			else if (action == "suspend") _model.ModernSuspend((string)command["code"]);
 			else if (action == "undo") _model.ModernUndo();
 			else if (action == "sort") _model.ModernSort();

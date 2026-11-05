@@ -34,6 +34,11 @@ internal static class EditorRegressionTests
                 Run("Latest NIED data incrementally updates an open JSON and rolls back safely", LatestNiedUpdate);
                 return failures == 0 ? 0 : 1;
             }
+            if (args.Length > 1 && args[1] == "--clear")
+            {
+                Run("Clearing image coordinates requires confirmation and supports undo", ClearImageCoordinates);
+                return failures == 0 ? 0 : 1;
+            }
             Run("Invalid render data never leaves the window disabled", RenderRestoresUi);
             Run("Real modern JSON loads all station fields", LoadsModernJson);
             Run("Unedited modern JSON round trip preserves all fields", RoundTripModernJson);
@@ -42,6 +47,7 @@ internal static class EditorRegressionTests
             Run("Failed load preserves previous document and usable UI", FailedLoadIsTransactional);
             Run("Smaller subsequent files and out-of-image clicks are safe", SmallerFileAndClick);
             Run("Point edits support multiple undo steps without losing JSON metadata", UndoEdits);
+            Run("Clearing image coordinates requires confirmation and supports undo", ClearImageCoordinates);
             Run("Modern and legacy NIED CSV records are readable", NiedCsvFormats);
             Run("NIED import can be undone and failed imports preserve data", UndoNiedImport);
             Run("Selection highlight blinks and safety square never blocks editing", SelectionHighlight);
@@ -290,7 +296,8 @@ internal static class EditorRegressionTests
             var originalSuspended = point.IsSuspended;
             Invoke(form, "InterpolatedPictureBox2_MouseDown", null, new MouseEventArgs(MouseButtons.Left, 1, 200, 150, 0));
             Invoke(form, "ToggleSuspendToolStripMenuItem_Click", null, EventArgs.Empty);
-            Invoke(form, "RemovePointToolStripMenuItem_Click", null, EventArgs.Empty);
+            using (var reply = ReplyToClearDialog(DialogResult.Yes, (text, defaultNo) => { }))
+                Invoke(form, "RemovePointToolStripMenuItem_Click", null, EventArgs.Empty);
             Invoke(form, "UndoLastEdit");
             Assert(point.Point == new Point2(200, 150), "Undo did not restore cleared pixel.");
             Invoke(form, "UndoLastEdit");
@@ -320,6 +327,69 @@ internal static class EditorRegressionTests
         var reader = typeof(MainForm).Assembly.GetType("KyoshinShindoPlaceEditor.NiedCsvFile");
         Assert(reader != null, "NIED CSV format support is missing.");
         return reader.GetMethod("Read").Invoke(null, new object[] { path, type });
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr GetActiveWindow();
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern int GetWindowText(IntPtr window, System.Text.StringBuilder text, int count);
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string className, string title);
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr SendMessage(IntPtr window, int message, IntPtr wParam, IntPtr lParam);
+
+    private static Timer ReplyToClearDialog(DialogResult response, Action<string, bool> observed)
+    {
+        var timer = new Timer { Interval = 50 };
+        timer.Tick += (sender, args) =>
+        {
+            var window = GetActiveWindow();
+            var title = new System.Text.StringBuilder(256);
+            GetWindowText(window, title, title.Capacity);
+            if (title.ToString() != "清除图像坐标") return;
+            var message = new System.Text.StringBuilder();
+            var child = IntPtr.Zero;
+            while ((child = FindWindowEx(window, child, "Static", null)) != IntPtr.Zero)
+            {
+                var text = new System.Text.StringBuilder(2048);
+                GetWindowText(child, text, text.Capacity);
+                message.Append(text);
+            }
+            var defaultId = SendMessage(window, 0x0400, IntPtr.Zero, IntPtr.Zero).ToInt64() & 0xffff;
+            observed(message.ToString(), defaultId == (int)DialogResult.No);
+            timer.Stop();
+            SendMessage(window, 0x0111, new IntPtr((int)response), IntPtr.Zero);
+        };
+        timer.Start();
+        return timer;
+    }
+
+    private static void ClearImageCoordinates()
+    {
+        using (var form = LoadedForm())
+        {
+            var points = (List<ObservationPoint>)Field(form, "_points");
+            var first = points[0];
+            var original = first.Point;
+            var observed = false;
+            var safeDefault = false;
+            string message = null;
+            using (var reply = ReplyToClearDialog(DialogResult.No, (text, defaultNo) =>
+                { observed = true; message = text; safeDefault = defaultNo; }))
+                Invoke(form, "RemovePointToolStripMenuItem_Click", null, EventArgs.Empty);
+            Assert(observed, "Coordinates were cleared without a confirmation dialog.");
+            Assert(safeDefault && message.Contains(first.Code) && message.Contains(first.Name)
+                && message.Contains("站点记录"), "Confirmation lacks station details or defaults to deletion.");
+            Assert(first.Point == original && !((ToolStripMenuItem)Field(form, "_undoMenuItem")).Enabled,
+                "Cancelling deletion changed coordinates or undo history.");
+            using (var reply = ReplyToClearDialog(DialogResult.Yes, (text, defaultNo) => { }))
+                Invoke(form, "RemovePointToolStripMenuItem_Click", null, EventArgs.Empty);
+            Assert(first.Point == null && points.Count == 1749, "Clear deleted a station or kept its pixel.");
+            Invoke(form, "UndoLastEdit");
+            var output = Path.Combine(tempDir, "clear-confirmation-undo.json");
+            Invoke(form, "SaveFile", output);
+            Assert(Equivalent(JsonRows(output), JsonRows(samplePath)), "Undo clear changed JSON fields.");
+        }
     }
 
     private static void NiedCsvFormats()
@@ -429,13 +499,32 @@ internal static class EditorRegressionTests
     private static void LiveNiedDownloads()
     {
         var downloader = typeof(MainForm).Assembly.GetType("KyoshinShindoPlaceEditor.NiedCsvFile");
-        foreach (var type in new[] { ObservationPointType.K_NET, ObservationPointType.KiK_net })
+        Func<ObservationPointType, byte[]> download = type =>
         {
             var bytes = (byte[])downloader.GetMethod("Download").Invoke(null, new object[] { type });
             var output = Path.Combine(tempDir, type + ".csv");
             File.WriteAllBytes(output, bytes);
             var records = (List<ObservationPoint>)ReadNied(output, type);
-            Assert(records.Count == (type == ObservationPointType.K_NET ? 1047 : 702), "Official downloaded station count mismatch.");
+            Assert(records.Count > 0 && records.All(point => point.Type == type), "Official download returned the wrong network.");
+            Console.WriteLine("NIED latest " + type + ": " + records.Count + " stations");
+            return bytes;
+        };
+        var incoming = (List<ObservationPoint>)downloader.GetMethod("DownloadLatest").Invoke(null, new object[] { download });
+        using (var model = new MainForm())
+        {
+            Invoke(model, "InitializeModernModel");
+            Invoke(model, "ModernLoad", samplePath);
+            var previous = ((List<ObservationPoint>)Field(model, "_points")).ToDictionary(point => point.Code, point => point.Point);
+            var arguments = new object[] { incoming, false };
+            var report = (string)typeof(MainForm).GetMethod("ModernUpdateNied", PrivateInstance).Invoke(model, arguments);
+            var current = ((List<ObservationPoint>)Field(model, "_points")).ToDictionary(point => point.Code);
+            Assert(previous.All(point => current.ContainsKey(point.Key) && current[point.Key].Point == point.Value),
+                "Live incremental update lost a station or image coordinate.");
+            Console.WriteLine("NIED live incremental update: " + report.Replace("\n", " | "));
+            if ((bool)arguments[1]) Invoke(model, "ModernUndo");
+            var output = Path.Combine(tempDir, "live-nied-undo.json");
+            Invoke(model, "ModernSave", output);
+            Assert(Equivalent(JsonRows(output), JsonRows(samplePath)), "Live NIED undo changed original JSON data.");
         }
     }
 
@@ -691,6 +780,7 @@ internal static class EditorRegressionTests
                     typeof(MainForm).GetMethod("ModernSave", PrivateInstance).Invoke(model, new object[] { output });
                     Assert(Equivalent(JsonRows(output), JsonRows(samplePath)), "Modern UI edit/undo changed JSON metadata.");
                     await VerifyModernNiedUpdate(form, browser);
+                    await VerifyModernClear(form, browser);
                     await browser.ExecuteScriptAsync("window.editorTest.select('ABSH01'); window.editorTest.setZoom(3);");
                     await System.Threading.Tasks.Task.Delay(200);
                     using (var image = File.Create(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "modern-editor.png")))
@@ -770,6 +860,36 @@ internal static class EditorRegressionTests
                 "Update button remained disabled after a download failure.");
             typeof(ModernEditorForm).GetMethod("LoadForTest", PrivateInstance).Invoke(form, new object[] { samplePath });
         }
+    }
+
+    private static async System.Threading.Tasks.Task VerifyModernClear(ModernEditorForm form,
+        Microsoft.Web.WebView2.WinForms.WebView2 browser)
+    {
+        var model = (MainForm)typeof(ModernEditorForm).GetField("_model", PrivateInstance).GetValue(form);
+        var first = ((List<ObservationPoint>)Field(model, "_points"))[0];
+        var pixel = first.Point;
+        var serializer = new JavaScriptSerializer();
+        var observed = false;
+        using (var reply = ReplyToClearDialog(DialogResult.No, (text, defaultNo) => { observed = true; }))
+            await browser.CoreWebView2.CallDevToolsProtocolMethodAsync("Runtime.evaluate",
+                serializer.Serialize(new { expression = "window.editorTest.command('clear',{code:'ABSH01'})",
+                    awaitPromise = true, returnByValue = true }));
+        Assert(observed && first.Point == pixel, "Browser clear did not honor cancellation.");
+        Assert(!(bool)typeof(ModernEditorForm).GetField("_dirty", PrivateInstance).GetValue(form),
+            "Cancelled clear marked the document as edited.");
+        using (var reply = ReplyToClearDialog(DialogResult.Yes, (text, defaultNo) => { }))
+            await browser.CoreWebView2.CallDevToolsProtocolMethodAsync("Runtime.evaluate",
+                serializer.Serialize(new { expression = "window.editorTest.command('clear',{code:'ABSH01'})",
+                    awaitPromise = true, returnByValue = true }));
+        Assert(first.Point == null && ((List<ObservationPoint>)Field(model, "_points")).Count == 1749,
+            "Browser clear removed more than image coordinates.");
+        var cleared = Path.Combine(tempDir, "browser-cleared.json");
+        Invoke(model, "ModernSave", cleared);
+        Assert(Object(JsonRows(cleared)[0])["point"] == null, "Clear did not save as null image coordinates.");
+        await browser.CoreWebView2.CallDevToolsProtocolMethodAsync("Runtime.evaluate",
+            serializer.Serialize(new { expression = "window.editorTest.command('undo')", awaitPromise = true, returnByValue = true }));
+        Invoke(model, "ModernSave", cleared);
+        Assert(Equivalent(JsonRows(cleared), JsonRows(samplePath)), "Browser clear undo lost original metadata.");
     }
 
     private static void SynchronizedMaps()

@@ -109,6 +109,12 @@ namespace KyoshinShindoPlaceEditor
 			ToggleSuspendToolStripMenuItem_Click(null, EventArgs.Empty);
 		}
 
+		internal bool ModernClear(string code, System.Windows.Forms.IWin32Window owner)
+		{
+			ModernSelect(code);
+			return ClearSelectedImagePoint(owner);
+		}
+
 		internal void ModernUndo() => UndoLastEdit();
 		internal string ModernUndoPointCode() => _undoHistory.LastOrDefault()?.ChangedPoint?.Code;
 		internal void ModernSort() => SortPoints();

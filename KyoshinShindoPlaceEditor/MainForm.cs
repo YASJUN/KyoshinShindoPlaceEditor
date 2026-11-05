@@ -602,7 +602,7 @@ namespace KyoshinShindoPlaceEditor
 
 		private void RemovePointToolStripMenuItem_Click(object sender, EventArgs e)
 		{
-			SetSelectedImagePoint(null);
+			ClearSelectedImagePoint(this);
 		}
 
 		private void ShowMapUsage(object sender, EventArgs e)

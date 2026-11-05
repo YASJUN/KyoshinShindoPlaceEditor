@@ -3,7 +3,8 @@ param(
     [string]$ReleaseDir = 'D:\KyoshinShindoPlaceEditor.0.0.6.0',
     [switch]$Network,
     [switch]$VisibleOnly,
-    [switch]$NiedUpdateOnly
+    [switch]$NiedUpdateOnly,
+    [switch]$ClearOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -29,7 +30,8 @@ $testExe = Join-Path $bin 'EditorRegressionTests.exe'
     "/reference:$bin\Microsoft.Web.WebView2.Core.dll" "/reference:$bin\Microsoft.Web.WebView2.WinForms.dll" `
     (Join-Path $PSScriptRoot 'EditorRegressionTests.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Regression tests did not compile.' }
-if ($NiedUpdateOnly) { & $testExe $SamplePath --nied-update }
+if ($ClearOnly) { & $testExe $SamplePath --clear }
+elseif ($NiedUpdateOnly) { & $testExe $SamplePath --nied-update }
 elseif ($VisibleOnly) { & $testExe $SamplePath --visible }
 elseif ($Network) { & $testExe $SamplePath --network } else { & $testExe $SamplePath }
 if ($LASTEXITCODE -ne 0) { throw 'Editor regression tests failed.' }

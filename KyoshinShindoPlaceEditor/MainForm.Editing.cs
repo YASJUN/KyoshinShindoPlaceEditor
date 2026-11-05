@@ -99,6 +99,21 @@ namespace KyoshinShindoPlaceEditor
 			UpdatePointValue(point);
 		}
 
+		private bool ClearSelectedImagePoint(IWin32Window owner)
+		{
+			var point = SelectedPoint();
+			if (point?.Point == null) return false;
+			var pixel = point.Point.Value;
+			if (MessageBox.Show(owner, $"确定清除以下站点的图像坐标吗？\n\n{point.Code}  {point.Name}"
+				+ $"\n当前图像坐标：({pixel.X}, {pixel.Y})\n\n仅清除图像坐标，保留站点记录和经纬度。"
+				+ "\n清除后可使用 Ctrl+Z 撤销。",
+				"清除图像坐标", MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
+				MessageBoxDefaultButton.Button2) != DialogResult.Yes)
+				return false;
+			SetSelectedImagePoint(null);
+			return true;
+		}
+
 		private void SortPoints()
 		{
 			if (_points == null || _points.Count == 0)

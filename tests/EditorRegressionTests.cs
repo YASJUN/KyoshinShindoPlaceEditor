@@ -37,6 +37,7 @@ internal static class EditorRegressionTests
             Run("Selection highlight blinks and safety square never blocks editing", SelectionHighlight);
             Run("Official NIED downloads are exposed inside the editor", DownloadMenu);
             Run("Large NIED edits keep selection stable without rebuilding every row", LargeNiedEdits);
+            Run("Station files merge coordinates with NIED metadata and support undo", MergeStationFiles);
             if (args.Length > 1 && args[1] == "--network")
                 Run("Official NIED downloads return valid original CSV bytes", LiveNiedDownloads);
             Console.WriteLine("RESULT: " + (tests - failures) + " passed, " + failures + " failed");
@@ -451,6 +452,56 @@ internal static class EditorRegressionTests
             Assert(list.SelectedItems.Count == 1 && list.SelectedItems[0].Text == incoming.Last().Code, "Editing lost selection.");
             Assert(changes == 0, "A single-coordinate edit unnecessarily resets the full list selection.");
             Assert(importMs < 5000 && selectMs < 3000 && editMs < 3000, "Large-file interaction exceeded the response budget.");
+        }
+    }
+
+    private static void MergeStationFiles()
+    {
+        using (var form = new MainForm())
+        {
+            Assert(typeof(MainForm).GetMethod("MergePointFile", PrivateInstance) != null, "Station-file merge is missing.");
+            var rows = JsonRows(samplePath);
+            var firstCode = (string)Object(rows[0])["code"];
+            var incoming = Points(ReadDocument(samplePath));
+            var official = new ObservationPoint { Code = firstCode, Type = incoming[0].Type, Name = "NIED official name",
+                Region = "official region", Location = incoming[0].Location, IsSuspended = true };
+            var exclusive = new ObservationPoint { Code = "NIED_ONLY", Type = ObservationPointType.K_NET, Name = "official only",
+                Region = "region", Location = new Location(35, 139) };
+            SetField(form, "_points", new List<ObservationPoint>());
+            var list = (ListView)Field(form, "listView1");
+            var handle = list.Handle;
+            Invoke(form, "ApplyNiedImport", new List<ObservationPoint> { official, exclusive });
+            var previousPath = Field(form, "_lastFilePath");
+            Invoke(form, "MergePointFile", samplePath);
+            var merged = (List<ObservationPoint>)Field(form, "_points");
+            Assert(merged.Count == 1750 && ReferenceEquals(merged[0], official) && merged.Contains(exclusive), "Merge replaced NIED stations.");
+            Assert(official.Point == incoming[0].Point && official.Name == "NIED official name" && official.IsSuspended,
+                "Merge did not preserve official metadata while adding image coordinates.");
+            Assert(Equals(previousPath, Field(form, "_lastFilePath")), "Import changed the current save target.");
+            var output = Path.Combine(tempDir, "merged.json");
+            Invoke(form, "SaveFile", output);
+            var savedRows = JsonRows(output);
+            Assert(Equivalent(Object(savedRows[1 + 1]), Object(rows[1])), "Merge lost an unmatched station's JSON fields.");
+            var savedFirst = Object(savedRows[0]);
+            Assert(Equivalent(savedFirst["point"], Object(rows[0])["point"]), "Merge lost original center and offsets.");
+            Assert(Equivalent(savedFirst["location"], Object(rows[0])["location"]), "Merge lost coordinate precision.");
+            Invoke(form, "UndoLastEdit");
+            Assert(((List<ObservationPoint>)Field(form, "_points")).Count == 2 && official.Point == null,
+                "Cannot undo the complete merge.");
+            var noPixel = Path.Combine(tempDir, "merge-no-pixel.json");
+            var firstRow = new Dictionary<string, object>(Object(rows[0]));
+            firstRow["point"] = null;
+            File.WriteAllText(noPixel, new JavaScriptSerializer().Serialize(new[] { firstRow }));
+            official.Point = new Point2(10, 20);
+            Invoke(form, "MergePointFile", noPixel);
+            Assert(official.Point == new Point2(10, 20), "An absent incoming coordinate cleared an existing one.");
+            var bad = Path.Combine(tempDir, "merge-conflict.json");
+            firstRow["type"] = official.Type == ObservationPointType.K_NET ? "kiK_net" : "k_NET";
+            File.WriteAllText(bad, new JavaScriptSerializer().Serialize(new[] { firstRow }));
+            try { Invoke(form, "MergePointFile", bad); throw new Exception("Conflicting merge succeeded."); }
+            catch (TargetInvocationException) { }
+            Assert(((List<ObservationPoint>)Field(form, "_points")).Count == 2 && official.Point == new Point2(10, 20),
+                "Invalid merge partially changed existing data.");
         }
     }
 }

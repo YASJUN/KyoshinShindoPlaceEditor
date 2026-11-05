@@ -22,6 +22,7 @@ namespace KyoshinShindoPlaceEditor
 			InitializeEditingFeatures();
 			InitializeSelectionHighlight();
 			InitializeNiedDownloads();
+			InitializePointMerge();
 		}
 
 		private List<ObservationPoint> _points;
@@ -403,32 +404,8 @@ namespace KyoshinShindoPlaceEditor
 			var previousJsonDocument = _jsonDocument;
 			try
 			{
-				if (!File.Exists(path))
-					throw new FileNotFoundException("找不到文件。", path);
-
-				List<ObservationPoint> loadedPoints;
-				ObservationPointJsonDocument jsonDocument = null;
-				if (path.EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
-				{
-					var result = ObservationPoint.LoadFromCsv(path);
-					if (result.points.Length == 0 && result.error > 0)
-						throw new InvalidDataException("CSV 没有成功读取任何观测点，请使用编辑器支持的 CSV 格式。");
-					loadedPoints = result.points.ToList();
-					report = $"处理报告\n成功：{result.success} 条\n失败：{result.error} 条";
-				}
-				else if (path.EndsWith(".mpk", StringComparison.OrdinalIgnoreCase))
-					loadedPoints = ObservationPoint.LoadFromMpk(path).ToList();
-				else if (path.EndsWith(".mpk.lz4", StringComparison.OrdinalIgnoreCase))
-					loadedPoints = ObservationPoint.LoadFromMpk(path, true).ToList();
-				else if (path.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
-				{
-					jsonDocument = ObservationPointJsonDocument.Load(path);
-					loadedPoints = jsonDocument.Points;
-				}
-				else
-					throw new InvalidDataException("无法识别要打开的文件类型。");
-
-				ObservationPointJsonDocument.ValidatePoints(loadedPoints);
+				ObservationPointJsonDocument jsonDocument;
+				var loadedPoints = ReadPointFile(path, out jsonDocument, out report);
 				_points = loadedPoints;
 				_jsonDocument = jsonDocument;
 				UpdateListValue();
@@ -445,6 +422,37 @@ namespace KyoshinShindoPlaceEditor
 			_undoHistory.Clear();
 			UpdateUndoMenu();
 			return true;
+		}
+
+		private static List<ObservationPoint> ReadPointFile(string path, out ObservationPointJsonDocument jsonDocument,
+			out string report, bool requireCompleteCsv = false)
+		{
+			jsonDocument = null;
+			report = null;
+			if (!File.Exists(path))
+				throw new FileNotFoundException("找不到文件。", path);
+			List<ObservationPoint> points;
+			if (path.EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
+			{
+				var result = ObservationPoint.LoadFromCsv(path);
+				if (result.error > 0 && (requireCompleteCsv || result.points.Length == 0))
+					throw new InvalidDataException($"CSV 有 {result.error} 条记录读取失败，请使用编辑器支持的 CSV 格式。");
+				points = result.points.ToList();
+				report = $"处理报告\n成功：{result.success} 条\n失败：{result.error} 条";
+			}
+			else if (path.EndsWith(".mpk", StringComparison.OrdinalIgnoreCase))
+				points = ObservationPoint.LoadFromMpk(path).ToList();
+			else if (path.EndsWith(".mpk.lz4", StringComparison.OrdinalIgnoreCase))
+				points = ObservationPoint.LoadFromMpk(path, true).ToList();
+			else if (path.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+			{
+				jsonDocument = ObservationPointJsonDocument.Load(path);
+				points = jsonDocument.Points;
+			}
+			else
+				throw new InvalidDataException("无法识别要打开的文件类型。");
+			ObservationPointJsonDocument.ValidatePoints(points);
+			return points;
 		}
 
 		#region Import

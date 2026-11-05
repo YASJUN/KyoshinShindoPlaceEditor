@@ -54,6 +54,7 @@
     <Compile Include="MainForm.Editing.cs" />
     <Compile Include="MainForm.Selection.cs" />
     <Compile Include="MainForm.Downloads.cs" />
+    <Compile Include="MainForm.Merge.cs" />
     <Compile Include="MainForm.Designer.cs">
       <DependentUpon>MainForm.cs</DependentUpon>
     </Compile>

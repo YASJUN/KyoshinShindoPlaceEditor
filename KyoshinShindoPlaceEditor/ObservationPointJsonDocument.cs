@@ -17,6 +17,32 @@ namespace KyoshinShindoPlaceEditor
 		public List<ObservationPoint> Points { get; private set; }
 		public bool IsModern { get; private set; }
 
+		public static ObservationPointJsonDocument MergeMetadata(ObservationPointJsonDocument current,
+			ObservationPointJsonDocument incoming, IEnumerable<KeyValuePair<ObservationPoint, ObservationPoint>> mapping,
+			List<ObservationPoint> points)
+		{
+			if (incoming == null || !incoming.IsModern)
+				return current;
+			var merged = new ObservationPointJsonDocument { IsModern = true, Points = points };
+			if (current != null && current.IsModern)
+				foreach (var row in current._originalRows)
+					merged._originalRows.Add(row.Key, row.Value);
+			foreach (var pair in mapping)
+			{
+				Dictionary<string, object> source, previous;
+				if (!incoming._originalRows.TryGetValue(pair.Key, out source))
+					continue;
+				var row = new Dictionary<string, object>(source);
+				if (merged._originalRows.TryGetValue(pair.Value, out previous))
+					foreach (var field in previous)
+						row[field.Key] = field.Value;
+				if (pair.Key.Point.HasValue && source.ContainsKey("point"))
+					row["point"] = source["point"];
+				merged._originalRows[pair.Value] = row;
+			}
+			return merged;
+		}
+
 		private static JavaScriptSerializer CreateSerializer()
 			=> new JavaScriptSerializer { MaxJsonLength = 16 * 1024 * 1024 };
 

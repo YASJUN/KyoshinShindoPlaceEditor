@@ -13,7 +13,7 @@
   const geoLayer = Object.assign(document.createElement("canvas"), { width: 1024, height: 1024 });
   const monitor = { canvas: $("monitor"), x: 0, y: 0, scale: 1, width: 0, height: 0 };
   const geographic = { canvas: $("geographic"), x: -344, y: -520, scale: 1, width: 0, height: 0 };
-  let conflicts = [], rowFrame = 0, drawFrame = 0, imageWarning = "";
+  let conflicts = [], rowFrame = 0, drawFrame = 0, imageWarning = "", estimatedPoint = null;
 
   function notice(text, error = false) {
     if (!text) return;
@@ -210,9 +210,17 @@
 
   function updateSelection() {
     const point = byCode.get(selected);
+    const estimate = point && !point.pixel ? ImageCoordinates.latLonToImage(point.lat, point.lon) : null;
+    estimatedPoint = ImageCoordinates.isInsideImage(estimate) ? [estimate.x, estimate.y] : null;
     $("clear").disabled = updatingNied || !point?.pixel;
     $("suspend").disabled = updatingNied || !point;
     $("selection").textContent = point ? point.code + " " + point.name + " | 图像坐标：" + (point.pixel ? point.pixel.join(", ") : "未设置") : "未选择观测点";
+    if (point && !point.pixel) {
+      $("selection").textContent += estimatedPoint ? " | 估算中心：" + estimatedPoint.join(", ") + "（仅供定位）"
+        : estimate ? " | 估算中心：" + estimate.x + ", " + estimate.y + "（超出底图范围）"
+        : " | 无法估算中心（经纬度无效或不在对应区域）";
+    }
+    $("selection").title = $("selection").textContent;
     conflicts = point?.pixel ? points.filter(other => other !== point && other.pixel
       && Math.abs(other.pixel[0] - point.pixel[0]) <= 1 && Math.abs(other.pixel[1] - point.pixel[1]) <= 1) : [];
     $("conflicts").textContent = point?.pixel ? "3×3 安全圈：" + (conflicts.length ? conflicts.length + " 个冲突（仅提示）" : "无其他点位") : "";
@@ -223,7 +231,7 @@
   function locate() {
     const point = byCode.get(selected);
     if (!point) return;
-    if (point.pixel) center(monitor, point.pixel);
+    if (point.pixel || estimatedPoint) center(monitor, point.pixel || estimatedPoint);
     if (point.geo) center(geographic, point.geo);
     scheduleDraw();
   }
@@ -251,9 +259,26 @@
       if (images.osm) context.drawImage(images.osm, 0, 0, 1024, 1024);
       context.drawImage(geoLayer, 0, 0);
     }
-    const point = byCode.get(selected), pixel = upper ? point?.pixel : point?.geo;
+    const point = byCode.get(selected), pixel = upper ? point?.pixel || estimatedPoint : point?.geo;
     if (!pixel) return;
     context.lineWidth = 1 / view.scale;
+    if (upper && !point.pixel) {
+      context.save();
+      const x = pixel[0] + 0.5, y = pixel[1] + 0.5;
+      context.lineWidth = 1.5 / view.scale;
+      context.fillStyle = "#1676aa22";
+      context.strokeStyle = "#1676aa";
+      context.beginPath();
+      context.arc(x, y, (blink ? 12 : 9) / view.scale, 0, Math.PI * 2);
+      context.fill();
+      context.stroke();
+      context.fillStyle = "#1676aa";
+      context.beginPath();
+      context.arc(x, y, 2.5 / view.scale, 0, Math.PI * 2);
+      context.fill();
+      context.restore();
+      return;
+    }
     if (upper) {
       context.strokeStyle = conflicts.length ? "#ef3434" : "#00c6d1";
       context.strokeRect(pixel[0] - 1 + 0.5 / view.scale, pixel[1] - 1 + 0.5 / view.scale, 3 - 1 / view.scale, 3 - 1 / view.scale);
@@ -384,7 +409,7 @@
   $("sync").onchange = () => { if ($("sync").checked) locate(); };
   $("dismiss").onclick = () => { $("notice").hidden = true; };
   new ResizeObserver(renderRows).observe($("table-scroll"));
-  setInterval(() => { if (byCode.get(selected)?.pixel) { blink = !blink; scheduleDraw(); } }, 500);
+  setInterval(() => { if (byCode.get(selected)?.pixel || estimatedPoint) { blink = !blink; scheduleDraw(); } }, 500);
 
   // Runtime tests exercise the same selection, zoom, virtualization and bridge used by the UI.
   window.editorTest = {

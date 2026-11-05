@@ -21,6 +21,54 @@
   try {
     document.getElementById("notice").hidden = true;
     document.getElementById("sync").checked = true;
+    const onlyUnmarked = document.getElementById("only-unmarked"), search = document.getElementById("search");
+    const stationStatus = document.getElementById("station-status");
+    assert(onlyUnmarked, "Missing unmarked-only list filter");
+    assert(stationStatus, "Missing suspended-station filter");
+    const rowCodes = () => [...document.querySelectorAll(".station-row")].map(row => row.dataset.code);
+    const setUnmarked = checked => { onlyUnmarked.checked = checked; onlyUnmarked.dispatchEvent(new Event("change")); };
+    const setStatus = value => { stationStatus.value = value; stationStatus.dispatchEvent(new Event("change")); };
+    setStatus("active");
+    assert(rowCodes().length === 5 && !rowCodes().includes("ESTNAHA") && !rowCodes().includes("ESTKNOWN"),
+      "Hide suspended stations filter is incorrect");
+    setStatus("suspended");
+    assert(rowCodes().length === 2 && rowCodes().includes("ESTNAHA") && rowCodes().includes("ESTKNOWN"),
+      "Only suspended stations filter is incorrect");
+    setUnmarked(true);
+    assert(rowCodes().join() === "ESTNAHA", "Suspended-only and unmarked-only filters do not combine");
+    setStatus("all");
+    assert(document.getElementById("table-scroll").getAttribute("aria-rowcount") === "6"
+      && !rowCodes().includes("ESTKNOWN"), "Unmarked-only filter includes a saved coordinate or excludes an estimate");
+    search.value = "NAHA"; search.dispatchEvent(new Event("input"));
+    assert(rowCodes().join() === "ESTNAHA", "Search does not combine with the unmarked filter");
+    search.value = "KNOWN"; search.dispatchEvent(new Event("input"));
+    assert(rowCodes().length === 0 && !document.getElementById("empty").hidden, "Empty filter results are not shown");
+    setUnmarked(false);
+    assert(rowCodes().join() === "ESTKNOWN", "Turning the filter off did not retain search");
+    search.value = ""; search.dispatchEvent(new Event("input"));
+    window.verifyUnmarkedFilterEdits = async () => {
+      setUnmarked(true);
+      window.editorTest.select("ESTTOKYO");
+      await window.editorTest.command("edit", { code: "ESTTOKYO", x: 227, y: 260 });
+      await tick();
+      assert(!rowCodes().includes("ESTTOKYO") && window.editorTest.state.selected === "ESTTOKYO",
+        "Manual annotation did not leave the unmarked list or lost selection");
+      await window.editorTest.command("undo");
+      await tick();
+      assert(rowCodes().includes("ESTTOKYO"), "Undo did not restore the unmarked row");
+      setStatus("suspended");
+      assert(rowCodes().join() === "ESTNAHA", "Combined filters lost an unmarked suspended station");
+      await window.editorTest.command("suspend", { code: "ESTNAHA" });
+      await tick();
+      assert(rowCodes().length === 0, "Changing suspended status did not update the filtered list");
+      await window.editorTest.command("undo");
+      await tick();
+      assert(rowCodes().join() === "ESTNAHA", "Undo did not restore the suspended filtered row");
+      setStatus("all");
+      setUnmarked(false);
+      assert(document.getElementById("table-scroll").getAttribute("aria-rowcount") === "7", "Full list was not restored");
+      return true;
+    };
     for (const [code, x, y] of [["ESTTOKYO", 227, 260], ["ESTNAHA", 107, 147], ["ESTEDGE", 154, 56]]) {
       for (const scale of [1, 3, 5, 10]) {
         safetyDraws = 0;

@@ -160,7 +160,10 @@
 
   function filterRows(reset = true) {
     const query = $("search").value.trim().toLocaleLowerCase();
-    filtered = query ? points.filter(point => [point.code, point.name, point.region].some(value => (value || "").toLocaleLowerCase().includes(query))) : points;
+    const status = $("station-status").value, onlyUnmarked = $("only-unmarked").checked;
+    const source = onlyUnmarked || status !== "all" ? points.filter(point => (!onlyUnmarked || !point.pixel)
+      && (status === "all" || (status === "suspended" ? point.suspended : !point.suspended))) : points;
+    filtered = query ? source.filter(point => [point.code, point.name, point.region].some(value => (value || "").toLocaleLowerCase().includes(query))) : source;
     $("virtual-space").style.height = filtered.length * ROW_HEIGHT + "px";
     $("table-scroll").setAttribute("aria-rowcount", filtered.length);
     $("empty").hidden = filtered.length !== 0;
@@ -507,6 +510,8 @@
     if (event.key === "Escape") { $("context-menu").hidden = true; $("notice").hidden = true; }
   });
   $("search").addEventListener("input", () => filterRows());
+  $("only-unmarked").addEventListener("change", () => filterRows());
+  $("station-status").addEventListener("change", () => filterRows());
   $("zoom-in").onclick = () => setZoom(monitor.scale + 1);
   $("zoom-out").onclick = () => setZoom(monitor.scale - 1);
   $("locate").onclick = locateStation;

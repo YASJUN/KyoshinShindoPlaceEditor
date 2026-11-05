@@ -96,6 +96,12 @@
     assert(footer.left >= 0 && footer.right <= innerWidth + 1 && footer.bottom <= innerHeight + 1,
       "Long conflict names pushed the status bar outside the window");
     assert(getComputedStyle(legend).overflowY === "auto", "Long conflict lists cannot scroll");
+    const filters = document.querySelector(".table-filters").getBoundingClientRect();
+    for (const control of document.querySelectorAll(".table-filters > *")) {
+      const bounds = control.getBoundingClientRect();
+      assert(bounds.left >= filters.left && bounds.right <= filters.right
+        && bounds.top >= filters.top && bounds.bottom <= filters.bottom, "List filter overflows its container");
+    }
     assert(legend.scrollHeight <= legend.clientHeight || legend.clientHeight <= 96, "Long legend lost its height limit");
     checkRows();
     return true;

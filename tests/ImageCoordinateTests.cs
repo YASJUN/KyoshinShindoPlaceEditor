@@ -178,6 +178,7 @@ internal static partial class EditorRegressionTests
         {
             var row = new Dictionary<string, object>(original) {
                 ["code"] = codes[index], ["name"] = codes[index],
+                ["is_suspended"] = index == 1 || index == 5,
                 ["location"] = new Dictionary<string, object> { ["latitude"] = locations[index][0], ["longitude"] = locations[index][1] },
                 ["point"] = index == 5 ? new Dictionary<string, object> {
                     ["center_point"] = new Dictionary<string, object> { ["x"] = 200, ["y"] = 200 },
@@ -217,8 +218,14 @@ internal static partial class EditorRegressionTests
         Assert(!(bool)typeof(ModernEditorForm).GetField("_dirty", PrivateInstance).GetValue(form), "Displaying estimates marked the document dirty.");
         using (var image = File.Create(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "image-estimate.png")))
             await browser.CoreWebView2.CapturePreviewAsync(Microsoft.Web.WebView2.Core.CoreWebView2CapturePreviewImageFormat.Png, image);
+        evaluation = await browser.CoreWebView2.CallDevToolsProtocolMethodAsync("Runtime.evaluate",
+            serializer.Serialize(new { expression = "window.verifyUnmarkedFilterEdits()", awaitPromise = true, returnByValue = true }));
+        Assert(!Object(serializer.DeserializeObject(evaluation)).ContainsKey("exceptionDetails"), "Unmarked filter did not follow edits/undo: " + evaluation);
+        Invoke(model, "ModernSave", output);
+        Assert(Equivalent(JsonRows(input), JsonRows(output)), "Unmarked filtering changed JSON or did not undo annotation.");
         typeof(ModernEditorForm).GetMethod("LoadForTest", PrivateInstance).Invoke(form, new object[] { samplePath });
         await Task.Delay(50);
         Console.WriteLine("PASS Estimated markers: mainland/inset, 1x/3x/5x/10x, panning, invalid regions, no safety square, unchanged JSON");
+        Console.WriteLine("PASS List filters: unmarked, hide/only suspended, combined search, empty results, estimates remain unmarked, edit/status/undo, unchanged JSON");
     }
 }

@@ -59,6 +59,7 @@
     </section>
     <section class="stations" aria-label="观测站点">
       <div class="tablebar"><strong>观测站点</strong><span id="counts">0 个站点</span><input id="search" type="search" placeholder="搜索代码、名称或地区" aria-label="搜索站点"></div>
+      <div class="table-filters"><label><input id="only-unmarked" type="checkbox">只显示未标注点位</label><select id="station-status" aria-label="停用状态筛选"><option value="all">全部站点</option><option value="active">不显示已停用站点</option><option value="suspended">只显示已停用站点</option></select></div>
       <div class="table-scroll" id="table-scroll" tabindex="0" role="grid" aria-label="站点列表" aria-rowcount="0">
         <div class="table-head row" role="row"><span>站点代码</span><span>网络</span><span>停用</span><span>名称</span><span>地区</span><span>经纬度</span><span>图像坐标</span></div>
         <div id="virtual-space"><div id="visible-rows"></div></div>

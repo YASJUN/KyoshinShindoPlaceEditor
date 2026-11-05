@@ -56,6 +56,14 @@ namespace KyoshinShindoPlaceEditor
 
 		internal string ModernMerge(string path) => MergePointFile(path);
 
+		internal string ModernUpdateNied(List<ObservationPoint> incoming, out bool changed)
+		{
+			var previous = _undoHistory.LastOrDefault();
+			var report = ApplyNiedImport(incoming);
+			changed = !ReferenceEquals(previous, _undoHistory.LastOrDefault());
+			return report;
+		}
+
 		internal string ModernImportNied(string[] paths)
 		{
 			var incoming = new List<ObservationPoint>();

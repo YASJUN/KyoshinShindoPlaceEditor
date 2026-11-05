@@ -15,6 +15,19 @@ namespace KyoshinShindoPlaceEditor
 		public const string StationListUrl = "https://www.kyoshin.bosai.go.jp/ja/stationlist/";
 		private const string DownloadUrl = StationListUrl + "download/stationlist/";
 
+		public static List<ObservationPoint> DownloadLatest(Func<ObservationPointType, byte[]> download)
+		{
+			var points = new List<ObservationPoint>();
+			foreach (var type in new[] { ObservationPointType.K_NET, ObservationPointType.KiK_net })
+			{
+				var bytes = download(type);
+				using (var reader = new StreamReader(new MemoryStream(bytes), Encoding.GetEncoding(932), true))
+					points.AddRange(ReadRecords(reader, type));
+			}
+			ObservationPointJsonDocument.ValidatePoints(points);
+			return points;
+		}
+
 		public static byte[] Download(ObservationPointType type)
 		{
 			if (type != ObservationPointType.K_NET && type != ObservationPointType.KiK_net)

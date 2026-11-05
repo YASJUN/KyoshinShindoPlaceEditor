@@ -149,6 +149,7 @@ namespace KyoshinShindoPlaceEditor
 			var existing = _points.ToDictionary(point => point.Code, StringComparer.Ordinal);
 			var added = 0;
 			var updated = 0;
+			var unchanged = 0;
 			try
 			{
 				foreach (var source in incoming)
@@ -166,7 +167,10 @@ namespace KyoshinShindoPlaceEditor
 					if (target.Name == source.Name && target.Region == source.Region && target.IsSuspended == source.IsSuspended
 						&& LocationsEqual(target.Location, source.Location)
 						&& (source.OldLocation == null || LocationsEqual(target.OldLocation, source.OldLocation)))
+					{
+						unchanged++;
 						continue;
+					}
 					target.Name = source.Name;
 					target.Region = source.Region;
 					target.Location = source.Location;
@@ -185,7 +189,9 @@ namespace KyoshinShindoPlaceEditor
 			if (added + updated > 0)
 				RecordUndo("导入 NIED 观测点", undo);
 			UpdateListValue();
-			return $"新增：{added} 条\n更新：{updated} 条\n已有图像坐标保留不变。";
+			var retained = existing.Count - incoming.Count;
+			return $"新增：{added} 条\n更新：{updated} 条\n未变化：{unchanged} 条\n官方列表外保留：{retained} 条"
+				+ "\n已有图像坐标保留不变；新增站点的图像坐标为空。\n整次操作可撤销，保存后才写入文件。";
 		}
 
 		private static bool LocationsEqual(Location left, Location right)

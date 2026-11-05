@@ -29,6 +29,11 @@ internal static class EditorRegressionTests
                 Run("Visible full-data window sustains selection, zoom and edits", VisibleWindowResponsiveness);
                 return failures == 0 ? 0 : 1;
             }
+            if (args.Length > 1 && args[1] == "--nied-update")
+            {
+                Run("Latest NIED data incrementally updates an open JSON and rolls back safely", LatestNiedUpdate);
+                return failures == 0 ? 0 : 1;
+            }
             Run("Invalid render data never leaves the window disabled", RenderRestoresUi);
             Run("Real modern JSON loads all station fields", LoadsModernJson);
             Run("Unedited modern JSON round trip preserves all fields", RoundTripModernJson);
@@ -45,6 +50,7 @@ internal static class EditorRegressionTests
             Run("Station files merge coordinates with NIED metadata and support undo", MergeStationFiles);
             Run("Station selection centers both maps and OSM can select stations", SynchronizedMaps);
             Run("Modern model imports and merges without creating native station rows", ModernHeadlessModel);
+            Run("Latest NIED data incrementally updates an open JSON and rolls back safely", LatestNiedUpdate);
             Run("Visible full-data window sustains selection, zoom and edits", VisibleWindowResponsiveness);
             if (args.Length > 1 && args[1] == "--network")
                 Run("Official NIED downloads return valid original CSV bytes", LiveNiedDownloads);
@@ -572,6 +578,67 @@ internal static class EditorRegressionTests
             Assert(((List<ObservationPoint>)Field(model, "_points")).Count == imported
                 && ((List<ObservationPoint>)Field(model, "_points")).All(point => !point.Point.HasValue), "Modern merge undo failed.");
             Console.WriteLine("PERF modern NIED import + merge + undo: " + watch.ElapsedMilliseconds + "ms; nativeRows=0");
+        }
+    }
+
+    private static void LatestNiedUpdate()
+    {
+        var downloader = typeof(MainForm).Assembly.GetType("KyoshinShindoPlaceEditor.NiedCsvFile");
+        var latest = downloader.GetMethod("DownloadLatest");
+        Assert(latest != null, "One-step latest NIED download and validation is missing.");
+        var encoding = System.Text.Encoding.GetEncoding(932);
+        Func<ObservationPointType, byte[]> download = type => encoding.GetBytes(type == ObservationPointType.KiK_net
+            ? "KiK-net,ABSH01,Official updated,Example,44.6,142.9,0,0,北海道,Hokkaido,suspension\n"
+            : "K-NET,NEW001,New station,Example,35,139,0,0,東京都,Tokyo,operating\n");
+        using (var model = new MainForm())
+        {
+            Invoke(model, "InitializeModernModel");
+            Invoke(model, "ModernLoad", samplePath);
+            var originalRows = JsonRows(samplePath);
+            var original = (List<ObservationPoint>)Field(model, "_points");
+            var first = original.Single(point => point.Code == "ABSH01");
+            var oldPixel = first.Point;
+            var incoming = (List<ObservationPoint>)latest.Invoke(null, new object[] { download });
+            Assert(incoming.Count == 2 && incoming.All(point => !point.Point.HasValue), "Downloads fabricated image coordinates.");
+            var arguments = new object[] { incoming, false };
+            var report = (string)typeof(MainForm).GetMethod("ModernUpdateNied", PrivateInstance).Invoke(model, arguments);
+            var updated = (List<ObservationPoint>)Field(model, "_points");
+            Assert((bool)arguments[1], "Changed NIED data was reported as unchanged.");
+            Assert(updated.Count == 1750 && ReferenceEquals(first, updated.Single(point => point.Code == "ABSH01")), "Incremental update replaced stations.");
+            Assert(first.Point == oldPixel && first.IsSuspended && first.Name == "Official updated", "Official metadata or original pixels were lost.");
+            Assert(updated.Single(point => point.Code == "NEW001").Point == null, "New stations need manual pixel placement.");
+            Assert(report.Contains("新增：1") && report.Contains("更新：1") && report.Contains("保留：1748"), "Update summary does not explain retained stations.");
+            var output = Path.Combine(tempDir, "latest-nied.json");
+            Invoke(model, "ModernSave", output);
+            var updatedRows = JsonRows(output);
+            var oldRow = Object(originalRows.Single(row => (string)Object(row)["code"] == "ABSH01"));
+            var changedRow = Object(updatedRows.Single(row => (string)Object(row)["code"] == "ABSH01"));
+            Assert(Equivalent(oldRow["point"], changedRow["point"]), "Update changed JSON center/offset data.");
+            foreach (var key in oldRow.Keys.Except(new[] { "name", "region", "location", "is_suspended" }))
+                Assert(Equivalent(oldRow[key], changedRow[key]), "Update lost JSON field: " + key);
+            Assert(Equivalent(originalRows[1], updatedRows[1]), "An absent official station was changed.");
+            arguments = new object[] { incoming, true };
+            typeof(MainForm).GetMethod("ModernUpdateNied", PrivateInstance).Invoke(model, arguments);
+            Assert(!(bool)arguments[1], "Identical official data created another change.");
+            Invoke(model, "ModernUndo");
+            Invoke(model, "ModernSave", output);
+            Assert(Equivalent(originalRows, JsonRows(output)), "Single undo did not restore the complete original JSON.");
+
+            Func<ObservationPointType, byte[]> failing = type => type == ObservationPointType.K_NET
+                ? download(type) : throw new IOException("Second download failed.");
+            try { latest.Invoke(null, new object[] { failing }); throw new Exception("Partial download succeeded."); }
+            catch (TargetInvocationException) { }
+            Func<ObservationPointType, byte[]> invalid = type => type == ObservationPointType.K_NET
+                ? download(type) : encoding.GetBytes("not,a,valid,csv\n");
+            try { latest.Invoke(null, new object[] { invalid }); throw new Exception("Invalid second network succeeded."); }
+            catch (TargetInvocationException) { }
+            var conflicting = (List<ObservationPoint>)latest.Invoke(null, new object[] { download });
+            conflicting.Add(new ObservationPoint { Code = original[1].Code, Type = ObservationPointType.K_NET,
+                Name = "conflicting", Region = "region", Location = new Location(35, 139) });
+            try { Invoke(model, "ModernUpdateNied", conflicting, false); throw new Exception("Network conflict succeeded."); }
+            catch (TargetInvocationException) { }
+            Invoke(model, "ModernSave", output);
+            Assert(Equivalent(originalRows, JsonRows(output)), "Failed update partially changed existing data.");
         }
     }
 

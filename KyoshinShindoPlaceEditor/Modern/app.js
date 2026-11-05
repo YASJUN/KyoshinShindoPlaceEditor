@@ -5,6 +5,7 @@
   let points = [], byCode = new Map(), filtered = [], selected = null, blink = true;
   let nextId = 1, queue = Promise.resolve(), pendingCount = 0, stateVersion = 0;
   let undoDepth = 0;
+  let updatingNied = false;
   let testing = false;
   const pending = new Map();
   const images = {};
@@ -30,11 +31,20 @@
   }
 
   function command(action, extra = {}) {
+    if (updatingNied) return Promise.resolve(null);
+    if (action === "updateNied") {
+      updatingNied = true;
+      updateCommandAvailability();
+    }
     pendingCount++;
-    $("busy").textContent = "正在处理…";
+    $("busy").textContent = updatingNied ? "正在下载 NIED 最新数据…" : "正在处理…";
     const task = queue.then(() => request(action, extra));
     queue = task.catch(error => notice(error.message, true)).finally(() => {
       pendingCount--;
+      if (action === "updateNied") {
+        updatingNied = false;
+        updateCommandAvailability();
+      }
       $("busy").textContent = pendingCount ? "正在处理…" : "";
     });
     return task;
@@ -104,7 +114,19 @@
     $("save").disabled = $("saveAs").disabled = points.length === 0;
     $("counts").textContent = points.length + " 个站点 · " + points.filter(point => point.pixel).length + " 已标注";
     updateSelection();
+    updateCommandAvailability();
     scheduleDraw();
+  }
+
+  function updateCommandAvailability() {
+    for (const button of document.querySelectorAll("[data-action]"))
+      button.disabled = updatingNied;
+    for (const id of ["save", "saveAs", "updateNied"])
+      $(id).disabled = updatingNied || points.length === 0;
+    $("undo").disabled = updatingNied || undoDepth === 0;
+    $("clear").disabled = updatingNied || !byCode.get(selected)?.pixel;
+    $("suspend").disabled = updatingNied || !byCode.has(selected);
+    $("refresh").disabled = $("source").disabled = updatingNied;
   }
 
   function rebuildLayers() {
@@ -188,8 +210,8 @@
 
   function updateSelection() {
     const point = byCode.get(selected);
-    $("clear").disabled = !point?.pixel;
-    $("suspend").disabled = !point;
+    $("clear").disabled = updatingNied || !point?.pixel;
+    $("suspend").disabled = updatingNied || !point;
     $("selection").textContent = point ? point.code + " " + point.name + " | 图像坐标：" + (point.pixel ? point.pixel.join(", ") : "未设置") : "未选择观测点";
     conflicts = point?.pixel ? points.filter(other => other !== point && other.pixel
       && Math.abs(other.pixel[0] - point.pixel[0]) <= 1 && Math.abs(other.pixel[1] - point.pixel[1]) <= 1) : [];

@@ -71,7 +71,7 @@ namespace KyoshinShindoPlaceEditor
 			})
 			{
 				if (dialog.ShowDialog(this) != DialogResult.OK) return;
-				var bytes = await Task.Run(() => NiedCsvFile.Download(network == "knet"
+				var bytes = await Task.Run(() => _downloadNied(network == "knet"
 					? ObservationPointType.K_NET : ObservationPointType.KiK_net));
 				var temporary = dialog.FileName + "." + Guid.NewGuid().ToString("N") + ".tmp";
 				try

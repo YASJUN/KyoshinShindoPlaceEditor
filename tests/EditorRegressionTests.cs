@@ -665,6 +665,8 @@ internal static class EditorRegressionTests
                         if (await browser.ExecuteScriptAsync("window.editorTest.state.count === 1749") == "true") break;
                         await System.Threading.Tasks.Task.Delay(50);
                     }
+                    Assert(await browser.ExecuteScriptAsync("!!document.getElementById('updateNied')") == "true",
+                        "The open JSON has no one-step latest NIED update button.");
                     var serializer = new JavaScriptSerializer();
                     var evaluation = await browser.CoreWebView2.CallDevToolsProtocolMethodAsync("Runtime.evaluate",
                         serializer.Serialize(new { expression = "window.editorTest.benchmark(100)", awaitPromise = true, returnByValue = true }));
@@ -688,6 +690,7 @@ internal static class EditorRegressionTests
                     var output = Path.Combine(tempDir, "modern-ui-undo.json");
                     typeof(MainForm).GetMethod("ModernSave", PrivateInstance).Invoke(model, new object[] { output });
                     Assert(Equivalent(JsonRows(output), JsonRows(samplePath)), "Modern UI edit/undo changed JSON metadata.");
+                    await VerifyModernNiedUpdate(form, browser);
                     await browser.ExecuteScriptAsync("window.editorTest.select('ABSH01'); window.editorTest.setZoom(3);");
                     await System.Threading.Tasks.Task.Delay(200);
                     using (var image = File.Create(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "modern-editor.png")))
@@ -704,6 +707,68 @@ internal static class EditorRegressionTests
             Application.Run(form);
             if (failure != null) throw failure;
             Assert(completed, "The modern UI scenario did not complete.");
+        }
+    }
+
+    private static async System.Threading.Tasks.Task VerifyModernNiedUpdate(ModernEditorForm form,
+        Microsoft.Web.WebView2.WinForms.WebView2 browser)
+    {
+        var input = Path.Combine(tempDir, "online-update-input.json");
+        File.Copy(samplePath, input);
+        typeof(ModernEditorForm).GetMethod("LoadForTest", PrivateInstance).Invoke(form, new object[] { input });
+        var original = JsonRows(input);
+        var calls = new List<ObservationPointType>();
+        using (var started = new System.Threading.ManualResetEventSlim())
+        using (var release = new System.Threading.ManualResetEventSlim())
+        {
+            Func<ObservationPointType, byte[]> download = type =>
+            {
+                calls.Add(type);
+                started.Set();
+                if (!release.Wait(5000)) throw new TimeoutException("Test download was not released.");
+                return System.Text.Encoding.GetEncoding(932).GetBytes(type == ObservationPointType.KiK_net
+                    ? "KiK-net,ABSH01,Updated online,Example,44.6,142.9,0,0,北海道,Hokkaido,suspension\n"
+                    : "K-NET,NEW001,New online station,Example,35,139,0,0,東京都,Tokyo,operating\n");
+            };
+            typeof(ModernEditorForm).GetField("_downloadNied", PrivateInstance).SetValue(form, download);
+            try
+            {
+                await browser.ExecuteScriptAsync("window.niedUpdateTest = window.editorTest.command('updateNied');");
+                for (var attempt = 0; attempt < 100 && !started.IsSet; attempt++)
+                    await System.Threading.Tasks.Task.Delay(20);
+                Assert(started.IsSet, "The update button did not start the NIED download.");
+                Assert(await browser.ExecuteScriptAsync(
+                    "window.editorTest.select('ABSH02'); document.getElementById('updateNied').disabled && window.editorTest.state.selected === 'ABSH02' && window.editorTest.state.count === 1749") == "true",
+                    "Selection froze or the document changed before both downloads completed.");
+            }
+            finally { release.Set(); }
+            var serializer = new JavaScriptSerializer();
+            var result = await browser.CoreWebView2.CallDevToolsProtocolMethodAsync("Runtime.evaluate",
+                serializer.Serialize(new { expression = "window.niedUpdateTest", awaitPromise = true, returnByValue = true }));
+            Assert(!Object(serializer.DeserializeObject(result)).ContainsKey("exceptionDetails"), "Online update bridge failed: " + result);
+            var model = (MainForm)typeof(ModernEditorForm).GetField("_model", PrivateInstance).GetValue(form);
+            var points = (List<ObservationPoint>)Field(model, "_points");
+            Assert(calls.Count == 2 && points.Count == 1750 && points.Single(point => point.Code == "ABSH01").Name == "Updated online",
+                "One-step update did not apply both networks.");
+            Assert((bool)typeof(ModernEditorForm).GetField("_dirty", PrivateInstance).GetValue(form), "An update was not marked unsaved.");
+            Assert(Equivalent(JsonRows(input), original), "Online update wrote the open JSON without Save.");
+            await browser.CoreWebView2.CallDevToolsProtocolMethodAsync("Runtime.evaluate",
+                serializer.Serialize(new { expression = "window.editorTest.command('undo')", awaitPromise = true, returnByValue = true }));
+            var output = Path.Combine(tempDir, "online-update-undo.json");
+            Invoke(model, "ModernSave", output);
+            Assert(Equivalent(JsonRows(output), original), "Online update undo lost station fields.");
+            Func<ObservationPointType, byte[]> failing = type => type == ObservationPointType.K_NET
+                ? download(type) : throw new IOException("Second network unavailable.");
+            typeof(ModernEditorForm).GetField("_downloadNied", PrivateInstance).SetValue(form, failing);
+            result = await browser.CoreWebView2.CallDevToolsProtocolMethodAsync("Runtime.evaluate",
+                serializer.Serialize(new { expression = "window.editorTest.command('updateNied').then(()=>false,()=>true)",
+                    awaitPromise = true, returnByValue = true }));
+            Assert((bool)Object(Object(serializer.DeserializeObject(result))["result"])["value"], "Failed download was not reported.");
+            Invoke(model, "ModernSave", output);
+            Assert(Equivalent(JsonRows(output), original), "A failed second download partially updated the document.");
+            Assert(await browser.ExecuteScriptAsync("!document.getElementById('updateNied').disabled") == "true",
+                "Update button remained disabled after a download failure.");
+            typeof(ModernEditorForm).GetMethod("LoadForTest", PrivateInstance).Invoke(form, new object[] { samplePath });
         }
     }
 

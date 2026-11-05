@@ -18,6 +18,7 @@ namespace KyoshinShindoPlaceEditor
 		private readonly WebView2 _browser = new WebView2 { Dock = DockStyle.Fill };
 		private readonly JavaScriptSerializer _json = new JavaScriptSerializer { MaxJsonLength = 16 * 1024 * 1024 };
 		private readonly SemaphoreSlim _commands = new SemaphoreSlim(1, 1);
+		private Func<ObservationPointType, byte[]> _downloadNied = NiedCsvFile.Download;
 		private bool _dirty;
 		private bool _testMode;
 		private const string PointFilter = "点位文件|*.json;*.mpk;*.mpk.lz4;*.csv";
@@ -153,6 +154,15 @@ namespace KyoshinShindoPlaceEditor
 					return result;
 				}
 			}
+			if (action == "updateNied")
+			{
+				var incoming = await Task.Run(() => NiedCsvFile.DownloadLatest(_downloadNied));
+				if (IsDisposed) return null;
+				bool changed;
+				var report = _model.ModernUpdateNied(incoming, out changed);
+				_dirty |= changed;
+				return "NIED 最新数据增量更新完成\n" + report;
+			}
 			if (action == "save" || action == "saveAs")
 			{
 				var path = _currentSavePath;
@@ -196,6 +206,8 @@ namespace KyoshinShindoPlaceEditor
 		internal void LoadForTest(string path)
 		{
 			_model.ModernLoad(path);
+			_currentSavePath = path;
+			_dirty = false;
 			Post(new { type = "state", state = _model.ModernState(), dirty = false });
 		}
 

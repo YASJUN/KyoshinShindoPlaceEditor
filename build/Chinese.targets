@@ -1,0 +1,12 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Target Name="UseOriginalReleaseLibrary" BeforeTargets="AssignProjectConfiguration">
+    <Error Condition="!Exists('$(OriginalReleaseDir)\KyoshinMonitorLib.dll')" Text="OriginalReleaseDir must contain the original release libraries." />
+    <ItemGroup>
+      <ProjectReference Remove="@(ProjectReference)" />
+      <Reference Include="KyoshinMonitorLib">
+        <HintPath>$(OriginalReleaseDir)\KyoshinMonitorLib.dll</HintPath>
+        <Private>False</Private>
+      </Reference>
+    </ItemGroup>
+  </Target>
+</Project>

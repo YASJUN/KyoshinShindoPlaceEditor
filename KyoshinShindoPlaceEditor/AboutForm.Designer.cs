@@ -90,7 +90,7 @@
 			this.linkLabel2.Size = new System.Drawing.Size(20, 12);
 			this.linkLabel2.TabIndex = 3;
 			this.linkLabel2.TabStop = true;
-			this.linkLabel2.Text = "HP";
+			this.linkLabel2.Text = "主页";
 			this.linkLabel2.LinkClicked += new System.Windows.Forms.LinkLabelLinkClickedEventHandler(this.LinkLabel2_LinkClicked);
 			// 
 			// linkLabel3
@@ -101,7 +101,7 @@
 			this.linkLabel3.Size = new System.Drawing.Size(135, 12);
 			this.linkLabel3.TabIndex = 3;
 			this.linkLabel3.TabStop = true;
-			this.linkLabel3.Text = "Mail: ingen188@gmail.com";
+			this.linkLabel3.Text = "邮箱: ingen188@gmail.com";
 			this.linkLabel3.LinkClicked += new System.Windows.Forms.LinkLabelLinkClickedEventHandler(this.LinkLabel3_LinkClicked);
 			// 
 			// label4
@@ -140,7 +140,7 @@
 			this.label6.Name = "label6";
 			this.label6.Size = new System.Drawing.Size(125, 12);
 			this.label6.TabIndex = 2;
-			this.label6.Text = "SpecialThanks(敬称略):";
+			this.label6.Text = "特别鸣谢:";
 			// 
 			// linkLabel5
 			// 
@@ -198,7 +198,7 @@
 			this.MinimizeBox = false;
 			this.Name = "AboutForm";
 			this.StartPosition = System.Windows.Forms.FormStartPosition.CenterParent;
-			this.Text = "このアプリケーションについて";
+			this.Text = "关于本软件";
 			this.Load += new System.EventHandler(this.AboutForm_Load);
 			this.ResumeLayout(false);
 			this.PerformLayout();

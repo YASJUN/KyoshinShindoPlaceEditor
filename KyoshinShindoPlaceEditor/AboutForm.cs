@@ -14,7 +14,7 @@ namespace KyoshinShindoPlaceEditor
 
 		private void AboutForm_Load(object sender, EventArgs e)
 		{
-			label2.Text = "バージョン: " + Assembly.GetExecutingAssembly().GetName().Version;
+			label2.Text = "版本: " + Assembly.GetExecutingAssembly().GetName().Version + " (简体中文版)";
 		}
 
 		private void LinkLabel1_LinkClicked(object sender, LinkLabelLinkClickedEventArgs e)

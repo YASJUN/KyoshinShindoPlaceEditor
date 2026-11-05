@@ -19,9 +19,13 @@ namespace KyoshinShindoPlaceEditor
 		public MainForm()
 		{
 			InitializeComponent();
+			InitializeEditingFeatures();
+			InitializeSelectionHighlight();
+			InitializeNiedDownloads();
 		}
 
 		private List<ObservationPoint> _points;
+		private ObservationPointJsonDocument _jsonDocument;
 		private Point2 _mapLeftUpMapPosition = new Point2(13 * 2 * MercatorProjection.TileSize, 5 * 2 * MercatorProjection.TileSize);
 
 		private Point _prevPos;
@@ -46,6 +50,7 @@ namespace KyoshinShindoPlaceEditor
 				interpolatedPictureBox3.Location = Point.Empty;
 
 				_monitorZoom = value;
+				RefreshSelectionHighlight();
 			}
 		}
 
@@ -53,27 +58,21 @@ namespace KyoshinShindoPlaceEditor
 		{
 			_sourceType = MonitorSourceType.SurfaceShindo;
 
-			Text += " - " + Assembly.GetExecutingAssembly().GetName().Version;
+			Text += " - " + Assembly.GetExecutingAssembly().GetName().Version + "（中文增强版）";
 
 			importFromNiedToolStripMenuItem.Click += (s2, e2) => ImportNiedData();
 			importFromEqWatchToolStripMenuItem.Click += (s2, e2) => ImportEqWatchData();
 
-			sortToolStripMenuItem.Click += (s2, e2) =>
-			{
-				if (_points == null || !_points.Any())
-					return;
-				_points.Sort();
-				UpdateListValue();
-			};
+			sortToolStripMenuItem.Click += (s2, e2) => SortPoints();
 
 			loadToolStripMenuItem.Click += (s2, e2) =>
 			{
 				var ofd = new OpenFileDialog()
 				{
-					FileName = Properties.Settings.Default.AutoLoadFilePath,
-					Filter = "全対応ファイル形式|*.mpk.lz4;*.mpk;*.json;*.csv|MessagePack(Lz4圧縮)(*.mpk.lz4)|*.mpk.lz4|MessagePack(*.mpk)|*.mpk|JSON(*.json)|*.json|CSV(*.csv)|*.csv",
+					FileName = _lastFilePath ?? Properties.Settings.Default.AutoLoadFilePath,
+					Filter = "所有支持的文件|*.mpk.lz4;*.mpk;*.json;*.csv|MessagePack(LZ4压缩)(*.mpk.lz4)|*.mpk.lz4|MessagePack(*.mpk)|*.mpk|JSON(*.json)|*.json|CSV(*.csv)|*.csv",
 					FilterIndex = 1,
-					Title = "読み込むファイルを選択してください",
+					Title = "请选择要打开的文件",
 					RestoreDirectory = true
 				};
 
@@ -87,7 +86,7 @@ namespace KyoshinShindoPlaceEditor
 			{
 				if (string.IsNullOrWhiteSpace(_lastFilePath) || !File.Exists(_lastFilePath))
 					return;
-				if (MessageBox.Show(_lastFilePath + "に上書き保存してもよろしいですか？", "確認", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.No)
+				if (MessageBox.Show("确定要覆盖保存以下文件吗？\n" + _lastFilePath, "确认", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.No)
 					return;
 
 				SaveFile(_lastFilePath);
@@ -96,10 +95,10 @@ namespace KyoshinShindoPlaceEditor
 			{
 				var sfd = new SaveFileDialog()
 				{
-					FileName = Properties.Settings.Default.AutoLoadFilePath,
-					Filter = "MessagePack(Lz4圧縮)(*.mpk.lz4)|*.mpk.lz4|MessagePack(*.mpk)|*.mpk|ProtocolBuffers(*.pbf)|*.pbf|JSON(*.json)|*.json|CSV(*.csv)|*.csv",
-					FilterIndex = 1,
-					Title = "保存するファイルを選択してください",
+					FileName = _lastFilePath ?? Properties.Settings.Default.AutoLoadFilePath,
+					Filter = "MessagePack(LZ4压缩)(*.mpk.lz4)|*.mpk.lz4|MessagePack(*.mpk)|*.mpk|ProtocolBuffers(*.pbf)|*.pbf|JSON(*.json)|*.json|CSV(*.csv)|*.csv",
+					FilterIndex = _jsonDocument != null ? 4 : 1,
+					Title = "请选择保存位置和文件名",
 					RestoreDirectory = true
 				};
 				if (sfd.ShowDialog() != DialogResult.OK)
@@ -125,7 +124,7 @@ namespace KyoshinShindoPlaceEditor
 				UpdateImage();
 			};
 
-			interpolatedPictureBox3.ImageLocation = "http://www.kmoni.bosai.go.jp/new/data/map_img/CommonImg/base_map_w.gif";
+			interpolatedPictureBox3.ImageLocation = "http://www.kmoni.bosai.go.jp/data/map_img/CommonImg/base_map_w.gif";
 
 			interpolatedPictureBox4.MouseDown += (s2, e2) =>
 			{
@@ -188,9 +187,9 @@ namespace KyoshinShindoPlaceEditor
 		{
 			var startTime = DateTime.Now.AddSeconds(-10);
 			if (_sourceType == MonitorSourceType.SurfaceShindo)
-				interpolatedPictureBox2.ImageLocation = "http://www.kmoni.bosai.go.jp/new/data/map_img/RealTimeImg/jma_s/" + startTime.ToString("yyyyMMdd") + "/" + startTime.ToString("yyyyMMddHHmmss") + ".jma_s.gif";
+				interpolatedPictureBox2.ImageLocation = "http://www.kmoni.bosai.go.jp/data/map_img/RealTimeImg/jma_s/" + startTime.ToString("yyyyMMdd") + "/" + startTime.ToString("yyyyMMddHHmmss") + ".jma_s.gif";
 			else if (_sourceType == MonitorSourceType.BoreholeShindo)
-				interpolatedPictureBox2.ImageLocation = "http://www.kmoni.bosai.go.jp/new/data/map_img/RealTimeImg/jma_b/" + startTime.ToString("yyyyMMdd") + "/" + startTime.ToString("yyyyMMddHHmmss") + ".jma_b.gif";
+				interpolatedPictureBox2.ImageLocation = "http://www.kmoni.bosai.go.jp/data/map_img/RealTimeImg/jma_b/" + startTime.ToString("yyyyMMdd") + "/" + startTime.ToString("yyyyMMddHHmmss") + ".jma_b.gif";
 		}
 
 		private void UpdateListValue()
@@ -198,77 +197,89 @@ namespace KyoshinShindoPlaceEditor
 			_points = _points ?? new List<ObservationPoint>();
 
 			string oldText = Text;
-			Text = "[データ更新中] " + Text;
+			bool wasEnabled = Enabled;
+			var oldCursor = Cursor;
+			Text = "[正在更新数据] " + Text;
 			Enabled = false;
 			Cursor = Cursors.WaitCursor;
 
-			int? lastSelectedIndex = null;
-			if (listView1.SelectedItems.Count >= 1)
-				lastSelectedIndex = listView1.SelectedItems[0].Index;
+			var lastSelectedCode = SelectedPointCode();
 
 			listView1.BeginUpdate();
 
-			listView1.Items.Clear();
-
-			if (_points != null && _points.Any())
-				listView1.Items.AddRange(_points.Select(p => new ListViewItem(new string[] { p.Code, p.Type.ToNaturalString(), p.IsSuspended ? "はい" : "いいえ", p.Name, p.Region, p.Location.ToString(), p.Point == null ? "未設定" : p.Point.ToString() })).ToArray());
-
-			if (!checkBox2.Checked)
+			try
 			{
-				Bitmap canvas = new Bitmap(352, 400);
-				foreach (var point in _points.Where(p => p.Point != null))
+				listView1.Items.Clear();
+				listView1.Items.AddRange(_points.Select(p => new ListViewItem(new string[] {
+					p.Code, p.Type == ObservationPointType.Unknown ? "未知" : p.Type.ToNaturalString(),
+					p.IsSuspended ? "是" : "否", p.Name, p.Region,
+					p.Location?.ToString() ?? "未设置", p.Point?.ToString() ?? "未设置"
+				})).ToArray());
+
+				Bitmap canvas = null;
+				if (!checkBox2.Checked)
 				{
-					Color color = Color.Black;
-
-					switch (point.Type)
+					canvas = new Bitmap(352, 400);
+					try
 					{
-						case ObservationPointType.KiK_net:
-							color = Color.Red;
-							break;
-
-						case ObservationPointType.K_NET:
-							color = Color.Orange;
-							break;
+						foreach (var point in _points.Where(p => p.Point.HasValue && ObservationPointJsonDocument.IsInsideImage(p.Point.Value)))
+						{
+							Color color = point.Type == ObservationPointType.KiK_net ? Color.Red
+								: point.Type == ObservationPointType.K_NET ? Color.Orange : Color.Black;
+							if (point.IsSuspended)
+								color = Color.Gray;
+							canvas.SetPixel(point.Point.Value.X, point.Point.Value.Y, color);
+						}
 					}
-
-					if (point.IsSuspended)
-						color = Color.Gray;
-
-					canvas.SetPixel(((Point2)point.Point).X, ((Point2)point.Point).Y, color);
+					catch
+					{
+						canvas.Dispose();
+						throw;
+					}
 				}
+				var oldImage = interpolatedPictureBox4.Image;
 				interpolatedPictureBox4.Image = canvas;
+				oldImage?.Dispose();
+
+				var selectedItem = listView1.Items.Cast<ListViewItem>().FirstOrDefault(item => item.Text == lastSelectedCode);
+				if (selectedItem != null)
+				{
+					selectedItem.Selected = true;
+					selectedItem.EnsureVisible();
+				}
 			}
-			else
-				interpolatedPictureBox4.Image = null;
-
-			listView1.EndUpdate();
-
-			if (lastSelectedIndex != null)
+			finally
 			{
-				listView1.Items[(int)lastSelectedIndex].Selected = true;
-				listView1.EnsureVisible((int)lastSelectedIndex);
+				listView1.EndUpdate();
+				Enabled = wasEnabled;
+				Cursor = oldCursor;
+				Text = oldText;
+				RefreshSelectionHighlight();
 			}
-
-			Enabled = true;
-			Cursor = Cursors.Default;
-			Text = oldText;
 		}
 
 		private void ListViewSelectedIndexChanged(object sender, EventArgs e)
 		{
+			RefreshSelectionHighlight();
 			if (listView1.SelectedItems.Count == 0)
+				return;
+			var selectedPoint = _points.FirstOrDefault(p => p.Code == listView1.SelectedItems[0].Text);
+			if (selectedPoint?.Location == null)
 				return;
 
 			System.Diagnostics.Debug.WriteLine(listView1.SelectedItems[0].Text);
 
 			if (_mapPoint != null && splitContainer2.Panel2.Controls.Contains(_mapPoint))
+			{
 				splitContainer2.Panel2.Controls.Remove(_mapPoint);
+				_mapPoint.Dispose();
+			}
 
 			_mapPoint = new Panel()
 			{
 				BackColor = Color.Red,
 				Size = new Size(3, 3), //3
-				Location = (MercatorProjection.LatLngToPixel(_points.First(p => p.Code == listView1.SelectedItems[0].Text).Location, 5) - _mapLeftUpMapPosition - 1 + interpolatedPictureBox1.Location),
+				Location = (MercatorProjection.LatLngToPixel(selectedPoint.Location, 5) - _mapLeftUpMapPosition - 1 + interpolatedPictureBox1.Location),
 			};
 
 			splitContainer2.Panel2.Controls.Add(_mapPoint);
@@ -292,6 +303,8 @@ namespace KyoshinShindoPlaceEditor
 		private void InterpolatedPictureBox2_MouseDown(object sender, MouseEventArgs e)
 		{
 			var clientpos = ((Point2)e.Location / (int)Math.Floor(MonitorZoom));
+			if (_points == null || !ObservationPointJsonDocument.IsInsideImage(clientpos))
+				return;
 			System.Diagnostics.Debug.WriteLine(clientpos);
 
 			if (e.Button == MouseButtons.Middle && _points.Any(p => p.Point == clientpos))
@@ -316,64 +329,36 @@ namespace KyoshinShindoPlaceEditor
 			if (listView1.SelectedItems.Count == 0)
 				return;
 
-			_points.First(p => p.Code == listView1.SelectedItems[0].Text).Point = clientpos;
-
-			UpdateListValue();
+			SetSelectedImagePoint(clientpos);
 		}
 
 		private void SaveFile(string path)
 		{
-			//csv
-			if (path.EndsWith(".csv"))
+			try
 			{
-				try
-				{
+				ObservationPointJsonDocument.ValidatePoints(_points);
+				if (path.EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
 					_points.SaveToCsv(path);
-				}
-				catch (Exception ex)
-				{
-					MessageBox.Show("csv保存に失敗しました。\n" + ex, null);
-				}
-			}
-			//mpk
-			else if (path.EndsWith(".mpk"))
-			{
-				try
-				{
+				else if (path.EndsWith(".mpk", StringComparison.OrdinalIgnoreCase))
 					_points.SaveToMpk(path);
-				}
-				catch (Exception ex)
-				{
-					MessageBox.Show("mpk保存に失敗しました。\n" + ex, null);
-				}
-			}
-			//mpk+LZ4
-			else if (path.EndsWith(".mpk.lz4"))
-			{
-				try
-				{
+				else if (path.EndsWith(".mpk.lz4", StringComparison.OrdinalIgnoreCase))
 					_points.SaveToMpk(path, true);
-				}
-				catch (Exception ex)
+				else if (path.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
 				{
-					MessageBox.Show("mpk+lz4保存に失敗しました。\n" + ex, null);
+					if (_jsonDocument != null)
+						_jsonDocument.Save(path, _points);
+					else
+						_points.SaveToJson(path);
+				}
+				else
+				{
+					MessageBox.Show("无法识别要保存的文件类型。", "保存失败");
+					return;
 				}
 			}
-			//json
-			else if (path.EndsWith(".json"))
+			catch (Exception ex)
 			{
-				try
-				{
-					_points.SaveToJson(path);
-				}
-				catch (Exception ex)
-				{
-					MessageBox.Show("Json保存に失敗しました。\n" + ex, null);
-				}
-			}
-			else
-			{
-				MessageBox.Show("保存するファイルの種類を判別できませんでした。", null);
+				MessageBox.Show("保存文件失败。\n" + ex.GetBaseException().Message, "保存失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
 				return;
 			}
 			_lastFilePath = path;
@@ -383,80 +368,65 @@ namespace KyoshinShindoPlaceEditor
 
 		private void LoadFile(string path)
 		{
-			if (!File.Exists(path))
-			{
-				MessageBox.Show(path + "が見つかりません。", null);
+			if (_points != null && _points.Any() && MessageBox.Show("当前已加载的数据将被全部覆盖。确定要打开文件吗？", "确认", MessageBoxButtons.YesNo) == DialogResult.No)
 				return;
-			}
 
-			//csv
-			if (path.EndsWith(".csv"))
-			{
-				if (_points.Any() && MessageBox.Show("現状読み込まれているデータはすべて上書きされます。読み込んでもよろしいですか？", "確認", MessageBoxButtons.YesNo) == DialogResult.No)
-					return;
-				try
-				{
-					(ObservationPoint[] points, uint addedCount, uint errorCount) = ObservationPoint.LoadFromCsv(path);
-					_points = points.ToList();
+			string error, report;
+			if (!TryLoadFile(path, out error, out report))
+				MessageBox.Show("读取文件失败。\n" + error, "读取失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+			else if (report != null)
+				MessageBox.Show(report, "处理完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
+		}
 
-					UpdateListValue();
-					MessageBox.Show($"レポート\n成功:{addedCount}件\n失敗:{errorCount}件", "処理終了", MessageBoxButtons.OK, MessageBoxIcon.Information);
-				}
-				catch (Exception ex)
-				{
-					MessageBox.Show("csv読み込みに失敗しました。\n" + ex, null);
-				}
-			}
-			//mpk
-			else if (path.EndsWith(".mpk"))
+		private bool TryLoadFile(string path, out string error, out string report)
+		{
+			error = report = null;
+			var previousPoints = _points;
+			var previousJsonDocument = _jsonDocument;
+			try
 			{
-				if (_points.Any() && MessageBox.Show("現状読み込まれているデータはすべて上書きされます。読み込んでもよろしいですか？", "確認", MessageBoxButtons.YesNo) == DialogResult.No)
-					return;
-				try
+				if (!File.Exists(path))
+					throw new FileNotFoundException("找不到文件。", path);
+
+				List<ObservationPoint> loadedPoints;
+				ObservationPointJsonDocument jsonDocument = null;
+				if (path.EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
 				{
-					_points = ObservationPoint.LoadFromMpk(path).ToList();
+					var result = ObservationPoint.LoadFromCsv(path);
+					if (result.points.Length == 0 && result.error > 0)
+						throw new InvalidDataException("CSV 没有成功读取任何观测点，请使用编辑器支持的 CSV 格式。");
+					loadedPoints = result.points.ToList();
+					report = $"处理报告\n成功：{result.success} 条\n失败：{result.error} 条";
 				}
-				catch (Exception ex)
+				else if (path.EndsWith(".mpk", StringComparison.OrdinalIgnoreCase))
+					loadedPoints = ObservationPoint.LoadFromMpk(path).ToList();
+				else if (path.EndsWith(".mpk.lz4", StringComparison.OrdinalIgnoreCase))
+					loadedPoints = ObservationPoint.LoadFromMpk(path, true).ToList();
+				else if (path.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
 				{
-					MessageBox.Show("mpk読み込みに失敗しました。\n" + ex, null);
+					jsonDocument = ObservationPointJsonDocument.Load(path);
+					loadedPoints = jsonDocument.Points;
 				}
+				else
+					throw new InvalidDataException("无法识别要打开的文件类型。");
+
+				ObservationPointJsonDocument.ValidatePoints(loadedPoints);
+				_points = loadedPoints;
+				_jsonDocument = jsonDocument;
+				UpdateListValue();
 			}
-			//mpk+LZ4
-			else if (path.EndsWith(".mpk.lz4"))
+			catch (Exception ex)
 			{
-				if (_points.Any() && MessageBox.Show("現状読み込まれているデータはすべて上書きされます。読み込んでもよろしいですか？", "確認", MessageBoxButtons.YesNo) == DialogResult.No)
-					return;
-				try
-				{
-					_points = ObservationPoint.LoadFromMpk(path, true).ToList();
-				}
-				catch (Exception ex)
-				{
-					MessageBox.Show("mpk+lz4読み込みに失敗しました。\n" + ex, null);
-				}
-			}
-			//json
-			else if (path.EndsWith(".json"))
-			{
-				if (_points.Any() && MessageBox.Show("現状読み込まれているデータはすべて上書きされます。読み込んでもよろしいですか？", "確認", MessageBoxButtons.YesNo) == DialogResult.No)
-					return;
-				try
-				{
-					_points = ObservationPoint.LoadFromJson(path).ToList();
-				}
-				catch (Exception ex)
-				{
-					MessageBox.Show("Json読み込みに失敗しました。\n" + ex, null);
-				}
-			}
-			else
-			{
-				MessageBox.Show("読み込むファイルの種類を判別できませんでした。", null);
-				return;
+				_points = previousPoints;
+				_jsonDocument = previousJsonDocument;
+				error = ex.GetBaseException().Message;
+				return false;
 			}
 			_lastFilePath = path;
 			saveToolStripMenuItem.Enabled = true;
-			UpdateListValue();
+			_undoHistory.Clear();
+			UpdateUndoMenu();
+			return true;
 		}
 
 		#region Import
@@ -465,7 +435,7 @@ namespace KyoshinShindoPlaceEditor
 		{
 			if (!File.Exists("Kansokuten.dat"))
 			{
-				MessageBox.Show("Kansokuten.datが見つかりません。", null);
+				MessageBox.Show("找不到 Kansokuten.dat 文件。", null);
 				return;
 			}
 
@@ -475,19 +445,20 @@ namespace KyoshinShindoPlaceEditor
 			var errorCount = 0;
 			var completionMode = false;
 
-			if (_points.Any() && MessageBox.Show("インポートすると現在読み込まれているデータに上書きされます。インポートしてもよろしいですか？", "確認", MessageBoxButtons.YesNo) == DialogResult.No)
+			if (_points.Any() && MessageBox.Show("导入操作将覆盖当前已加载的数据。确定要导入吗？", "确认", MessageBoxButtons.YesNo) == DialogResult.No)
 				return;
 
-			if (_points.Any(p => p.Point != null) && MessageBox.Show("ピクセル座標が登録されていない地点のみインポートし、それ以外はその他の情報を補完するモードにしますか？", "確認", MessageBoxButtons.YesNo) == DialogResult.Yes)
+			if (_points.Any(p => p.Point != null) && MessageBox.Show("是否启用补全模式？\n仅导入尚未设置像素坐标的点位，其他点位只补全其余信息。", "确认", MessageBoxButtons.YesNo) == DialogResult.Yes)
 				completionMode = true;
 
+			var undo = CapturePointState();
 			try
 			{
 				using (var reader = new StreamReader("Kansokuten.dat", Encoding.GetEncoding("Shift-JIS")))
 				{
 					if (!reader.ReadLine().StartsWith("v5 Kyoshin Monitor Base Data for EqWatch"))
 					{
-						MessageBox.Show("対応していないEqWatchファイルのバージョンです。", null);
+						MessageBox.Show("不支持此版本的 EqWatch 数据文件。", null);
 						return;
 					}
 					while (reader.Peek() >= 0)
@@ -534,114 +505,47 @@ namespace KyoshinShindoPlaceEditor
 						}
 					}
 				}
-				UpdateListValue();
-				MessageBox.Show($"レポート\n置換:{replaceCount}件\n追加:{addedCount}件\n失敗:{errorCount}件", "処理終了", MessageBoxButtons.OK, MessageBoxIcon.Information);
+				MessageBox.Show($"处理报告\n替换：{replaceCount} 条\n新增：{addedCount} 条\n失败：{errorCount} 条", "处理完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
 			}
 			catch (Exception ex)
 			{
-				MessageBox.Show("EqWatchデータのインポートに失敗しました。\n" + ex, null);
+				MessageBox.Show("导入 EqWatch 数据失败。\n" + ex, null);
+			}
+			finally
+			{
+				if (addedCount + replaceCount > 0)
+					RecordUndo("导入 EqWatch 数据", undo);
 				UpdateListValue();
 			}
 		}
 
 		private void ImportNiedData()
 		{
-			if (!File.Exists("sitepub_kik_sj.csv"))
+			var kikPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "sitepub_kik_sj.csv");
+			var knetPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "sitepub_knet_sj.csv");
+			if (!File.Exists(kikPath))
 			{
-				MessageBox.Show("sitepub_kik_sj.csvが見つかりません。", null);
+				MessageBox.Show("找不到 sitepub_kik_sj.csv 文件。", null);
 				return;
 			}
-			if (!File.Exists("sitepub_knet_sj.csv"))
+			if (!File.Exists(knetPath))
 			{
-				MessageBox.Show("sitepub_knet_sj.csvが見つかりません。", null);
+				MessageBox.Show("找不到 sitepub_knet_sj.csv 文件。", null);
 				return;
 			}
 
-			if (_points.Any() && MessageBox.Show("登録されていない地点情報が追加で登録されます。インポートしてもよろしいですか？", "確認", MessageBoxButtons.YesNo) == DialogResult.No)
+			if (_points.Any() && MessageBox.Show("将添加尚未登记的点位信息。确定要导入吗？", "确认", MessageBoxButtons.YesNo) == DialogResult.No)
 				return;
-
-			var addedCount = 0;
-			var errorCount = 0;
-			var updateCount = 0;
 
 			try
 			{
-				using (var reader = new StreamReader("sitepub_kik_sj.csv", Encoding.GetEncoding("Shift-JIS")))
-					while (reader.Peek() >= 0)
-					{
-						try
-						{
-							var strings = reader.ReadLine().Split(',');
-
-							ObservationPoint point;
-							//発見したら情報のアップデートを行う
-							if ((point = _points.FirstOrDefault(p => p.Type == ObservationPointType.KiK_net && p.Code == strings[0] && p.Name == strings[1] && p.Region == strings[7])) != null)
-							{
-								point.OldLocation = new Location(float.Parse(strings[9]), float.Parse(strings[10]));
-								point.Location = new Location(float.Parse(strings[3]), float.Parse(strings[4]));
-								updateCount++;
-								continue;
-							}
-
-							_points.Add(new ObservationPoint
-							{
-								Type = ObservationPointType.KiK_net,
-								Code = strings[0],
-								IsSuspended = strings[13] == "suspension",
-								Name = strings[1],
-								Region = strings[7],
-								Location = new Location(float.Parse(strings[3]), float.Parse(strings[4])),
-								OldLocation = new Location(float.Parse(strings[9]), float.Parse(strings[10]))
-							});
-							addedCount++;
-						}
-						catch
-						{
-							errorCount++;
-						}
-					}
-				using (var reader = new StreamReader("sitepub_knet_sj.csv", Encoding.GetEncoding("Shift-JIS")))
-					while (reader.Peek() >= 0)
-					{
-						try
-						{
-							var strings = reader.ReadLine().Split(',');
-
-							ObservationPoint point;
-							//発見したら情報のアップデートを行う
-							if ((point = _points.FirstOrDefault(p => p.Type == ObservationPointType.K_NET && p.Code == strings[0] && p.Name == strings[1] && p.Region == strings[7])) != null)
-							{
-								point.OldLocation = new Location(float.Parse(strings[9]), float.Parse(strings[10]));
-								point.Location = new Location(float.Parse(strings[3]), float.Parse(strings[4]));
-								updateCount++;
-								continue;
-							}
-
-							_points.Add(new ObservationPoint
-							{
-								Type = ObservationPointType.K_NET,
-								Code = strings[0],
-								IsSuspended = strings[13] == "suspension",
-								Name = strings[1],
-								Region = strings[7],
-								Location = new Location(float.Parse(strings[3]), float.Parse(strings[4])),
-								OldLocation = new Location(float.Parse(strings[9]), float.Parse(strings[10]))
-							});
-							addedCount++;
-						}
-						catch
-						{
-							errorCount++;
-						}
-					}
-
-				UpdateListValue();
-				MessageBox.Show($"レポート\n置換:非対応\n追加:{addedCount}件\n失敗:{errorCount}件\n更新:{updateCount}件", "処理終了", MessageBoxButtons.OK, MessageBoxIcon.Information);
+				var incoming = NiedCsvFile.Read(kikPath, ObservationPointType.KiK_net);
+				incoming.AddRange(NiedCsvFile.Read(knetPath, ObservationPointType.K_NET));
+				MessageBox.Show(ApplyNiedImport(incoming), "处理完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
 			}
 			catch (Exception ex)
 			{
-				MessageBox.Show("NIED観測点データのインポートに失敗しました。\n" + ex, null);
-				UpdateListValue();
+				MessageBox.Show("导入 NIED 观测点数据失败。\n" + ex.GetBaseException().Message, "导入失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
 			}
 		}
 
@@ -654,15 +558,12 @@ namespace KyoshinShindoPlaceEditor
 			if (checkBox1.Checked)
 				interpolatedPictureBox3.ImageLocation = "";
 			else
-				interpolatedPictureBox3.ImageLocation = "http://www.kmoni.bosai.go.jp/new/data/map_img/CommonImg/base_map_w.gif";
+				interpolatedPictureBox3.ImageLocation = "http://www.kmoni.bosai.go.jp/data/map_img/CommonImg/base_map_w.gif";
 		}
 
 		private void PointMapChanged(object sender, EventArgs e)
 		{
-			if (checkBox2.Checked)
-				interpolatedPictureBox4.Image = null;
-			else
-				UpdateListValue();
+			UpdateListValue();
 		}
 
 		private void ContextMenuOpening(object sender, CancelEventArgs e)
@@ -674,34 +575,28 @@ namespace KyoshinShindoPlaceEditor
 
 		private void ToggleSuspendToolStripMenuItem_Click(object sender, EventArgs e)
 		{
-			var point = _points.FirstOrDefault(p => p.Code == listView1.SelectedItems[0].Text);
+			var point = SelectedPoint();
 			if (point == null)
 				return;
-			if (point.IsSuspended)
-				point.IsSuspended = false;
-			else
-				point.IsSuspended = true;
+			var previous = point.IsSuspended;
+			RecordUndo("切换停用状态", () => point.IsSuspended = previous);
+			point.IsSuspended = !previous;
 			UpdateListValue();
 		}
 
 		private void RemovePointToolStripMenuItem_Click(object sender, EventArgs e)
 		{
-			var point = _points.FirstOrDefault(p => p.Code == listView1.SelectedItems[0].Text);
-			if (point == null)
-				return;
-
-			point.Point = null;
-
-			UpdateListValue();
+			SetSelectedImagePoint(null);
 		}
 
 		private void ShowMapUsage(object sender, EventArgs e)
 		{
-			MessageBox.Show(@"**操作方法**
-画像更新ボタンを押すと現在の時間の強震モニタの画像に更新されます。
-右リストの項目を選択した状態で右クリック	ポインタの位置に参照地点を上書きします。
-左ドラッグ	地図移動	※だいぶ手抜き実装なので画面外に出してしまわないように気をつけてください。
-中(ホイールボタン)クリック	ポインタが参照地点上である場合はその地点が右リストから選択されます。", "操作方法");
+			MessageBox.Show(@"操作说明
+点击“刷新图像”可获取当前时刻附近的强震监测图像。
+先选中右侧列表中的观测点，再在上方监测图像中单击鼠标左键，即可将该点的图像坐标设置为点击位置。
+按住鼠标右键拖动可移动图像或地图，请注意不要将其移出可视区域。
+在已有点位上单击鼠标中键（滚轮按钮），可在右侧列表中选中该观测点。
+编辑后请通过“文件”菜单保存，修改不会自动保存。", "操作说明");
 		}
 	}
 }

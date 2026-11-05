@@ -164,7 +164,7 @@
 			this.label5.Name = "label5";
 			this.label5.Size = new System.Drawing.Size(53, 12);
 			this.label5.TabIndex = 2;
-			this.label5.Text = "■休止中";
+			this.label5.Text = "■已停用";
 			// 
 			// button7
 			// 
@@ -173,7 +173,7 @@
 			this.button7.Name = "button7";
 			this.button7.Size = new System.Drawing.Size(75, 23);
 			this.button7.TabIndex = 4;
-			this.button7.Text = "画像更新";
+			this.button7.Text = "刷新图像";
 			this.button7.UseVisualStyleBackColor = true;
 			this.button7.Click += new System.EventHandler(this.RefleshKyoshinImage);
 			// 
@@ -185,7 +185,7 @@
 			this.label1.Name = "label1";
 			this.label1.Size = new System.Drawing.Size(29, 12);
 			this.label1.TabIndex = 3;
-			this.label1.Text = "拡大";
+			this.label1.Text = "缩放";
 			// 
 			// button6
 			// 
@@ -247,7 +247,7 @@
 			this.checkBox2.Name = "checkBox2";
 			this.checkBox2.Size = new System.Drawing.Size(108, 16);
 			this.checkBox2.TabIndex = 1;
-			this.checkBox2.Text = "取得座標非表示";
+			this.checkBox2.Text = "隐藏点位坐标";
 			this.checkBox2.UseVisualStyleBackColor = true;
 			this.checkBox2.CheckedChanged += new System.EventHandler(this.PointMapChanged);
 			// 
@@ -269,7 +269,7 @@
 			this.checkBox1.Name = "checkBox1";
 			this.checkBox1.Size = new System.Drawing.Size(84, 16);
 			this.checkBox1.TabIndex = 1;
-			this.checkBox1.Text = "背景非表示";
+			this.checkBox1.Text = "隐藏底图";
 			this.checkBox1.UseVisualStyleBackColor = true;
 			this.checkBox1.CheckedChanged += new System.EventHandler(this.BackgroundMapChanged);
 			// 
@@ -366,36 +366,36 @@
 			// 
 			// CodeColumn
 			// 
-			this.CodeColumn.Text = "観測点コード";
+			this.CodeColumn.Text = "观测点代码";
 			this.CodeColumn.Width = 80;
 			// 
 			// TypeColumn
 			// 
-			this.TypeColumn.Text = "種類";
+			this.TypeColumn.Text = "类型";
 			// 
 			// SuspendColumn
 			// 
-			this.SuspendColumn.Text = "休止中?";
+			this.SuspendColumn.Text = "已停用?";
 			this.SuspendColumn.Width = 55;
 			// 
 			// NameColumn
 			// 
-			this.NameColumn.Text = "観測点名";
+			this.NameColumn.Text = "观测点名称";
 			this.NameColumn.Width = 100;
 			// 
 			// PrefColumn
 			// 
-			this.PrefColumn.Text = "大まかな地域";
+			this.PrefColumn.Text = "所在地区";
 			this.PrefColumn.Width = 100;
 			// 
 			// LocationColumn
 			// 
-			this.LocationColumn.Text = "観測点地理座標";
+			this.LocationColumn.Text = "观测点经纬度";
 			this.LocationColumn.Width = 160;
 			// 
 			// PointColumn
 			// 
-			this.PointColumn.Text = "強震モニタ上での座標";
+			this.PointColumn.Text = "强震监测图像坐标";
 			this.PointColumn.Width = 120;
 			// 
 			// contextMenuStrip1
@@ -411,14 +411,14 @@
 			// 
 			this.toggleSuspendToolStripMenuItem.Name = "toggleSuspendToolStripMenuItem";
 			this.toggleSuspendToolStripMenuItem.Size = new System.Drawing.Size(253, 22);
-			this.toggleSuspendToolStripMenuItem.Text = "休止状態を切り替える(&T)";
+			this.toggleSuspendToolStripMenuItem.Text = "切换停用状态(&T)";
 			this.toggleSuspendToolStripMenuItem.Click += new System.EventHandler(this.ToggleSuspendToolStripMenuItem_Click);
 			// 
 			// removePointToolStripMenuItem
 			// 
 			this.removePointToolStripMenuItem.Name = "removePointToolStripMenuItem";
 			this.removePointToolStripMenuItem.Size = new System.Drawing.Size(253, 22);
-			this.removePointToolStripMenuItem.Text = "強震モニタ上での座標情報を削除(&R)";
+			this.removePointToolStripMenuItem.Text = "清除强震监测图像坐标(&R)";
 			this.removePointToolStripMenuItem.Click += new System.EventHandler(this.RemovePointToolStripMenuItem_Click);
 			// 
 			// menuStrip1
@@ -445,13 +445,13 @@
             this.exitToolStripMenuItem});
 			this.fileToolStripMenuItem.Name = "fileToolStripMenuItem";
 			this.fileToolStripMenuItem.Size = new System.Drawing.Size(67, 20);
-			this.fileToolStripMenuItem.Text = "ファイル(&F)";
+			this.fileToolStripMenuItem.Text = "文件(&F)";
 			// 
 			// loadToolStripMenuItem
 			// 
 			this.loadToolStripMenuItem.Name = "loadToolStripMenuItem";
 			this.loadToolStripMenuItem.Size = new System.Drawing.Size(133, 22);
-			this.loadToolStripMenuItem.Text = "読み込む(&L)";
+			this.loadToolStripMenuItem.Text = "打开(&L)";
 			// 
 			// saveToolStripMenuItem
 			// 
@@ -464,7 +464,7 @@
 			// 
 			this.saveAsToolStripMenuItem.Name = "saveAsToolStripMenuItem";
 			this.saveAsToolStripMenuItem.Size = new System.Drawing.Size(193, 22);
-			this.saveAsToolStripMenuItem.Text = "場所を指定して保存(&A)";
+			this.saveAsToolStripMenuItem.Text = "另存为(&A)";
 			// 
 			// toolStripSeparator1
 			// 
@@ -475,7 +475,7 @@
 			// 
 			this.exitToolStripMenuItem.Name = "exitToolStripMenuItem";
 			this.exitToolStripMenuItem.Size = new System.Drawing.Size(133, 22);
-			this.exitToolStripMenuItem.Text = "終了(&E)";
+			this.exitToolStripMenuItem.Text = "退出(&E)";
 			// 
 			// importToolStripMenuItem
 			// 
@@ -484,19 +484,19 @@
             this.importFromEqWatchToolStripMenuItem});
 			this.importToolStripMenuItem.Name = "importToolStripMenuItem";
 			this.importToolStripMenuItem.Size = new System.Drawing.Size(74, 20);
-			this.importToolStripMenuItem.Text = "インポート(&I)";
+			this.importToolStripMenuItem.Text = "导入(&I)";
 			// 
 			// importFromNiedToolStripMenuItem
 			// 
 			this.importFromNiedToolStripMenuItem.Name = "importFromNiedToolStripMenuItem";
 			this.importFromNiedToolStripMenuItem.Size = new System.Drawing.Size(213, 22);
-			this.importFromNiedToolStripMenuItem.Text = "&NIEDの観測点情報";
+			this.importFromNiedToolStripMenuItem.Text = "&NIED 观测点信息";
 			// 
 			// importFromEqWatchToolStripMenuItem
 			// 
 			this.importFromEqWatchToolStripMenuItem.Name = "importFromEqWatchToolStripMenuItem";
 			this.importFromEqWatchToolStripMenuItem.Size = new System.Drawing.Size(213, 22);
-			this.importFromEqWatchToolStripMenuItem.Text = "&EqWatchのKansokuten.dat";
+			this.importFromEqWatchToolStripMenuItem.Text = "&EqWatch 的 Kansokuten.dat";
 			// 
 			// selectKyoshinSourceToolStripMenuItem
 			// 
@@ -505,7 +505,7 @@
             this.boreholeShindoStripMenuItem});
 			this.selectKyoshinSourceToolStripMenuItem.Name = "selectKyoshinSourceToolStripMenuItem";
 			this.selectKyoshinSourceToolStripMenuItem.Size = new System.Drawing.Size(140, 20);
-			this.selectKyoshinSourceToolStripMenuItem.Text = "モニタ画像の取得元選択";
+			this.selectKyoshinSourceToolStripMenuItem.Text = "监测图像来源";
 			// 
 			// surfaceShindoStripMenuItem
 			// 
@@ -513,13 +513,13 @@
 			this.surfaceShindoStripMenuItem.CheckState = System.Windows.Forms.CheckState.Indeterminate;
 			this.surfaceShindoStripMenuItem.Name = "surfaceShindoStripMenuItem";
 			this.surfaceShindoStripMenuItem.Size = new System.Drawing.Size(200, 22);
-			this.surfaceShindoStripMenuItem.Text = "リアルタイム震度(地表)(&S)";
+			this.surfaceShindoStripMenuItem.Text = "实时震度(地表)(&S)";
 			// 
 			// boreholeShindoStripMenuItem
 			// 
 			this.boreholeShindoStripMenuItem.Name = "boreholeShindoStripMenuItem";
 			this.boreholeShindoStripMenuItem.Size = new System.Drawing.Size(200, 22);
-			this.boreholeShindoStripMenuItem.Text = "リアルタイム震度(地中)(&U)";
+			this.boreholeShindoStripMenuItem.Text = "实时震度(地下)(&U)";
 			// 
 			// helpToolStripMenuItem
 			// 
@@ -527,19 +527,19 @@
             this.aboutToolStripMenuItem});
 			this.helpToolStripMenuItem.Name = "helpToolStripMenuItem";
 			this.helpToolStripMenuItem.Size = new System.Drawing.Size(65, 20);
-			this.helpToolStripMenuItem.Text = "ヘルプ(&H)";
+			this.helpToolStripMenuItem.Text = "帮助(&H)";
 			// 
 			// aboutToolStripMenuItem
 			// 
 			this.aboutToolStripMenuItem.Name = "aboutToolStripMenuItem";
 			this.aboutToolStripMenuItem.Size = new System.Drawing.Size(214, 22);
-			this.aboutToolStripMenuItem.Text = "このアプリケーションについて(&A)";
+			this.aboutToolStripMenuItem.Text = "关于本软件(&A)";
 			// 
 			// sortToolStripMenuItem
 			// 
 			this.sortToolStripMenuItem.Name = "sortToolStripMenuItem";
 			this.sortToolStripMenuItem.Size = new System.Drawing.Size(175, 20);
-			this.sortToolStripMenuItem.Text = "観測点コードに順に並び替える(&S)";
+			this.sortToolStripMenuItem.Text = "按观测点代码排序(&S)";
 			// 
 			// MainForm
 			// 
@@ -548,7 +548,7 @@
 			this.ClientSize = new System.Drawing.Size(1084, 711);
 			this.Controls.Add(this.splitContainer1);
 			this.Name = "MainForm";
-			this.Text = "KyoshinShindoPlaceEditor";
+			this.Text = "强震监测点位编辑器";
 			this.Load += new System.EventHandler(this.MainForm_Load);
 			this.splitContainer1.Panel1.ResumeLayout(false);
 			this.splitContainer1.Panel2.ResumeLayout(false);

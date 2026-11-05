@@ -9,6 +9,74 @@ using Microsoft.Web.WebView2.WinForms;
 
 internal static partial class EditorRegressionTests
 {
+    private static void DraftAnnotations()
+    {
+        var serializer = new JavaScriptSerializer();
+        var original = Object(JsonRows(samplePath)[0]);
+        var input = Path.Combine(tempDir, "draft-input.json");
+        File.WriteAllText(input, serializer.Serialize(new[] {
+            new Dictionary<string, object>(original) { ["code"] = "DRAFT", ["point"] = null },
+            new Dictionary<string, object>(original) { ["code"] = "KNOWN" }
+        }));
+        using (var model = new MainForm())
+        {
+            Invoke(model, "InitializeModernModel");
+            Invoke(model, "ModernLoad", input);
+            try {
+                Invoke(model, "ModernFillDrafts", new Dictionary<string, KyoshinMonitorLib.Point2> {
+                    ["DRAFT"] = new KyoshinMonitorLib.Point2(352, 400)
+                });
+                throw new Exception("Out-of-image batch draft accepted.");
+            } catch (System.Reflection.TargetInvocationException) { }
+            Invoke(model, "ModernFillDrafts", new Dictionary<string, KyoshinMonitorLib.Point2> {
+                ["DRAFT"] = new KyoshinMonitorLib.Point2(227, 260),
+                ["KNOWN"] = new KyoshinMonitorLib.Point2(100, 100)
+            });
+            Assert((int)typeof(MainForm).GetProperty("ModernDraftCount", PrivateInstance).GetValue(model) == 1,
+                "Batch fill changed an existing annotation.");
+            Invoke(model, "ModernEdit", "DRAFT", 229, 259);
+            Invoke(model, "ModernFillDrafts", new Dictionary<string, KyoshinMonitorLib.Point2> {
+                ["DRAFT"] = new KyoshinMonitorLib.Point2(100, 100)
+            });
+            try { Invoke(model, "ModernLoad", Path.Combine(tempDir, "missing-draft.json")); }
+            catch (System.Reflection.TargetInvocationException) { }
+            var output = Path.Combine(tempDir, "draft-save.json");
+            Invoke(model, "ModernSave", output);
+            Assert(Equivalent(JsonRows(input), JsonRows(output)), "Unconfirmed coordinates leaked into JSON.");
+            Assert(((List<KyoshinMonitorLib.ObservationPoint>)Field(model, "_points"))[0].Point == null,
+                "Draft was counted as marked.");
+            Invoke(model, "ModernConfirmDraft", "DRAFT");
+            Invoke(model, "ModernSave", output);
+            var image = Object(Object(JsonRows(output)[0])["point"]);
+            Assert(Convert.ToInt32(Object(image["center_point"])["x"]) == 227
+                && Convert.ToInt32(Object(image["offset"])["x"]) == 2
+                && Convert.ToInt32(Object(image["offset"])["y"]) == -1, "Confirmation lost draft center/offset.");
+            Assert(!Object(JsonRows(output)[0]).ContainsKey("needs_review"), "Unexpected review metadata.");
+            Invoke(model, "ModernUndo");
+            Invoke(model, "ModernSave", output);
+            Assert(Equivalent(JsonRows(input), JsonRows(output)), "Undo confirmation did not restore a draft.");
+            Assert((int)typeof(MainForm).GetProperty("ModernDraftCount", PrivateInstance).GetValue(model) == 1,
+                "Undo confirmation lost the draft.");
+            Invoke(model, "ModernUndo");
+            Invoke(model, "ModernUndo");
+            Assert((int)typeof(MainForm).GetProperty("ModernDraftCount", PrivateInstance).GetValue(model) == 0,
+                "Batch fill was not a single undo step.");
+            Invoke(model, "ModernFillDrafts", new Dictionary<string, KyoshinMonitorLib.Point2> {
+                ["DRAFT"] = new KyoshinMonitorLib.Point2(227, 260)
+            });
+            Invoke(model, "ModernEdit", "DRAFT", 240, 260);
+            Invoke(model, "ModernConfirmDraft", "DRAFT");
+            Invoke(model, "ModernSave", output);
+            image = Object(Object(JsonRows(output)[0])["point"]);
+            Assert(Convert.ToInt32(Object(image["center_point"])["x"]) == 240
+                && Convert.ToInt32(Object(image["offset"])["x"]) == 0, "Large draft offset was not rebased.");
+            Invoke(model, "ModernUndo");
+            Invoke(model, "ModernLoad", input);
+            Assert((int)typeof(MainForm).GetProperty("ModernDraftCount", PrivateInstance).GetValue(model) == 0,
+                "Opening another file retained stale drafts.");
+        }
+    }
+
     private static async Task VerifyImageClickSync(ModernEditorForm form, WebView2 browser)
     {
         var serializer = new JavaScriptSerializer();
@@ -223,9 +291,92 @@ internal static partial class EditorRegressionTests
         Assert(!Object(serializer.DeserializeObject(evaluation)).ContainsKey("exceptionDetails"), "Unmarked filter did not follow edits/undo: " + evaluation);
         Invoke(model, "ModernSave", output);
         Assert(Equivalent(JsonRows(input), JsonRows(output)), "Unmarked filtering changed JSON or did not undo annotation.");
+        Func<string, Task> draftEvaluate = async expression => {
+            var result = await browser.CoreWebView2.CallDevToolsProtocolMethodAsync("Runtime.evaluate",
+                serializer.Serialize(new { expression, awaitPromise = true, returnByValue = true }));
+            Assert(!Object(serializer.DeserializeObject(result)).ContainsKey("exceptionDetails"), "Draft UI scenario failed: " + result);
+        };
+        typeof(ModernEditorForm).GetField("_currentSavePath", PrivateInstance).SetValue(form, output);
+        await draftEvaluate(@"(async()=>{
+            const $=id=>document.getElementById(id);
+            window.assertDraft=(condition,message)=>{if(!condition)throw new Error(message);};
+            window.waitDraft=async()=>{for(let i=0;i<100;i++){
+                if(window.editorTest.state.pendingCount===0)return;
+                await new Promise(r=>setTimeout(r,20));
+            }throw new Error('Draft command did not complete');};
+            $('only-unmarked').checked=true; $('only-unmarked').dispatchEvent(new Event('change'));
+            window.editorTest.select('ESTTOKYO');
+            $('fillDrafts').click(); await window.waitDraft();
+            assertDraft(!$('confirmDraft').disabled,'Missing explicit confirmation: '+$('notice').textContent);
+            assertDraft(document.querySelector('[data-code=ESTTOKYO]').textContent.includes('待核对 227, 260'),'Draft left unmarked list');
+            assertDraft($('counts').textContent.includes('1 已标注') && $('counts').textContent.includes('3 待核对'),'Draft count is incorrect');
+            assertDraft($('selection').textContent.includes('尚未写入'),'Missing draft state');
+            await window.editorTest.command('edit',{code:'ESTNAHA',x:228,y:260});
+            window.editorTest.select('ESTTOKYO');
+            assertDraft($('conflicts').textContent.includes('ESTNAHA'),'Draft conflicts were ignored');
+            await new Promise(requestAnimationFrame);
+            const canvas=$('monitor'), rect=canvas.getBoundingClientRect(), matrix=canvas.getContext('2d').getTransform();
+            canvas.dispatchEvent(new PointerEvent('pointerdown',{button:0,
+                clientX:rect.x+(229.5*matrix.a+matrix.e)/devicePixelRatio,
+                clientY:rect.y+(259.5*matrix.d+matrix.f)/devicePixelRatio}));
+            await window.waitDraft();
+            assertDraft($('selection').textContent.includes('偏移：2, -1'),'Draft offset not displayed');
+            assertDraft(!$('geo-preview').hidden && $('geo-preview').textContent.includes('临时'),'Draft click lost temporary geographic preview');
+            await window.editorTest.command('save');
+            assertDraft(!$('confirmDraft').disabled,'Save discarded the draft');
+        })()");
+        Assert(Equivalent(JsonRows(input), JsonRows(output)), "UI save exported unconfirmed drafts.");
+        Assert(!(bool)typeof(ModernEditorForm).GetField("_dirty", PrivateInstance).GetValue(form), "Saving drafts marked official data dirty.");
+        var discardObserved = false;
+        using (var reply = ReplyToClearDialog(System.Windows.Forms.DialogResult.No, (text, defaultNo) => {
+            discardObserved = true;
+            Assert(defaultNo && text.Contains("草稿") && text.Contains("内存"), "Draft loss warning is incomplete.");
+        }, "未保存的修改 / 草稿"))
+            Assert(!(bool)typeof(ModernEditorForm).GetMethod("ConfirmDiscard", PrivateInstance).Invoke(form, null),
+                "Discard ignored cancellation.");
+        Assert(discardObserved, "Saving official data suppressed the draft loss warning.");
+        var clearedDraft = false;
+        using (var reply = ReplyToClearDialog(System.Windows.Forms.DialogResult.No, (text, defaultNo) => {
+            Assert(defaultNo && text.Contains("草稿"), "Draft clear has no safe confirmation.");
+            clearedDraft = true;
+        }))
+            await draftEvaluate("window.editorTest.command('clear',{code:'ESTTOKYO'})");
+        Assert(clearedDraft, "Draft clear confirmation was not shown.");
+        await draftEvaluate("assertDraft(!document.getElementById('confirmDraft').disabled,'Cancelled clear removed the draft')");
+        using (var reply = ReplyToClearDialog(System.Windows.Forms.DialogResult.Yes, (text, defaultNo) => { }))
+            await draftEvaluate("window.editorTest.command('clear',{code:'ESTTOKYO'})");
+        await draftEvaluate(@"(async()=>{
+            assertDraft(document.getElementById('confirmDraft').disabled,'Clear did not remove the draft');
+            await window.editorTest.command('undo');
+            assertDraft(!document.getElementById('confirmDraft').disabled,'Undo did not restore cleared draft');
+            document.getElementById('dismiss').click();
+        })()");
+        using (var image = File.Create(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "annotation-drafts.png")))
+            await browser.CoreWebView2.CapturePreviewAsync(Microsoft.Web.WebView2.Core.CoreWebView2CapturePreviewImageFormat.Png, image);
+        await draftEvaluate(@"(async()=>{
+            document.getElementById('confirmDraft').click(); await window.waitDraft();
+            assertDraft(!document.querySelector('[data-code=ESTTOKYO]'),'Confirmed point remained unmarked');
+            await window.editorTest.command('save');
+        })()");
+        var confirmed = Object(Object(JsonRows(output)[0])["point"]);
+        Assert(Convert.ToInt32(Object(confirmed["center_point"])["x"]) == 227
+            && Convert.ToInt32(Object(confirmed["offset"])["x"]) == 2, "UI confirmation did not preserve center and offset.");
+        Assert(Object(JsonRows(output)[1])["point"] == null, "Confirming one station committed another draft.");
+        await draftEvaluate(@"(async()=>{
+            await window.editorTest.command('undo');
+            assertDraft(document.querySelector('[data-code=ESTTOKYO]').textContent.includes('待核对'),'Undo did not restore review state');
+            await window.editorTest.command('undo');
+            await window.editorTest.command('undo');
+            await window.editorTest.command('undo');
+            await window.editorTest.command('save');
+            document.getElementById('only-unmarked').checked=false;
+            document.getElementById('only-unmarked').dispatchEvent(new Event('change'));
+        })()");
+        Assert(Equivalent(JsonRows(input), JsonRows(output)), "Draft undo did not restore the original JSON.");
         typeof(ModernEditorForm).GetMethod("LoadForTest", PrivateInstance).Invoke(form, new object[] { samplePath });
         await Task.Delay(50);
         Console.WriteLine("PASS Estimated markers: mainland/inset, 1x/3x/5x/10x, panning, invalid regions, no safety square, unchanged JSON");
         Console.WriteLine("PASS List filters: unmarked, hide/only suspended, combined search, empty results, estimates remain unmarked, edit/status/undo, unchanged JSON");
+        Console.WriteLine("PASS Draft UI: batch fill, bounds/region exclusions, conflicts, adjustment, unmarked retention, save isolation, explicit confirmation/offset, undo");
     }
 }

@@ -41,8 +41,10 @@ namespace KyoshinShindoPlaceEditor
 		}
 
 		private bool ConfirmDiscard()
-			=> !_dirty || MessageBox.Show(this, "有尚未保存的修改，确定放弃这些修改吗？", "未保存的修改",
-				MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes;
+			=> !(_dirty || _model.ModernDraftCount > 0) || MessageBox.Show(this,
+				"有尚未保存的修改或待核对草稿。\n待核对草稿仅保留在内存中，保存不会写入草稿坐标。"
+				+ $"\n当前还有 {_model.ModernDraftCount} 个待核对草稿。确定放弃并继续吗？", "未保存的修改 / 草稿",
+				MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) == DialogResult.Yes;
 
 		private async Task InitializeBrowserAsync()
 		{
@@ -90,8 +92,10 @@ namespace KyoshinShindoPlaceEditor
 			try
 			{
 				var raw = args.WebMessageAsJson;
-				if (raw.Length > 8192) throw new InvalidDataException("请求过长。");
+				if (raw.Length > 512 * 1024) throw new InvalidDataException("请求过长。");
 				command = _json.Deserialize<Dictionary<string, object>>(raw);
+				if (raw.Length > 8192 && (string)command["action"] != "fillDrafts")
+					throw new InvalidDataException("请求过长。");
 				id = Convert.ToInt32(command["id"]);
 			}
 			catch { return; }
@@ -100,7 +104,7 @@ namespace KyoshinShindoPlaceEditor
 			{
 				var action = (string)command["action"];
 				var changedCode = action == "undo" ? _model.ModernUndoPointCode()
-					: action == "edit" || action == "clear" || action == "suspend" ? (string)command["code"] : null;
+					: action == "edit" || action == "confirmDraft" || action == "clear" || action == "suspend" ? (string)command["code"] : null;
 				var notice = await ExecuteCommandAsync(action, command);
 				Post(new { id, state = _model.ModernState(changedCode), dirty = _dirty, notice, testing = _testMode });
 				if (action == "ready")
@@ -177,15 +181,38 @@ namespace KyoshinShindoPlaceEditor
 				_model.ModernSave(path);
 				_currentSavePath = path;
 				_dirty = false;
-				return "已保存 " + Path.GetFileName(path);
+				return "已保存 " + Path.GetFileName(path) + (_model.ModernDraftCount > 0
+					? $"（{_model.ModernDraftCount} 个待核对草稿未写入，仍保留在内存中）" : "");
+			}
+			if (action == "fillDrafts")
+			{
+				var candidates = new Dictionary<string, Point2>();
+				var rows = command["candidates"] as System.Collections.IList;
+				if (rows == null || rows.Count > 20000) throw new InvalidDataException("草稿列表无效。");
+				foreach (var value in rows)
+				{
+					var row = value as Dictionary<string, object>;
+					if (row == null) throw new InvalidDataException("草稿记录无效。");
+					candidates.Add((string)row["code"], new Point2(Integer(row, "x"), Integer(row, "y")));
+				}
+				_model.ModernFillDrafts(candidates);
+				return $"当前有 {_model.ModernDraftCount} 个待核对草稿，确认前不会写入文件。"
+					+ "\n无法换算或超出底图范围的站点保持未设置；已有标注和草稿保持不变。";
+			}
+			if (action == "edit" && _model.ModernHasDraft((string)command["code"]))
+			{
+				_model.ModernEdit((string)command["code"], Integer(command, "x"), Integer(command, "y"));
+				return null;
 			}
 			if (action == "clear")
 			{
-				if (_model.ModernClear((string)command["code"], this)) _dirty = true;
+				var draft = _model.ModernHasDraft((string)command["code"]);
+				if (_model.ModernClear((string)command["code"], this) && !draft) _dirty = true;
 				return null;
 			}
 			if (action == "edit")
 				_model.ModernEdit((string)command["code"], Integer(command, "x"), Integer(command, "y"));
+			else if (action == "confirmDraft") _model.ModernConfirmDraft((string)command["code"]);
 			else if (action == "suspend") _model.ModernSuspend((string)command["code"]);
 			else if (action == "undo") _model.ModernUndo();
 			else if (action == "sort") _model.ModernSort();

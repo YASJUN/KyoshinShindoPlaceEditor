@@ -170,6 +170,23 @@ namespace KyoshinShindoPlaceEditor
 			return row;
 		}
 
+		internal Action ConfirmImagePoint(ObservationPoint point, Point2 center, Point2 pixel)
+		{
+			if (!IsModern) return null;
+			Dictionary<string, object> previous;
+			var existed = _originalRows.TryGetValue(point, out previous);
+			var row = ToModernRow(point);
+			row["point"] = UpdatedImagePoint(pixel, new Dictionary<string, object> {
+				["center_point"] = PixelObject(null, center.X, center.Y),
+				["offset"] = PixelObject(null, 0, 0)
+			});
+			_originalRows[point] = row;
+			return () => {
+				if (existed) _originalRows[point] = previous;
+				else _originalRows.Remove(point);
+			};
+		}
+
 		private static object UpdatedImagePoint(Point2? point, object original)
 		{
 			if (point == ReadImagePoint(original))

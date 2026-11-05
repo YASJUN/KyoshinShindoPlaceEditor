@@ -19,6 +19,7 @@
   let conflictColors = new Map();
   let geographicPreview = null;
   let previewRevision = 0;
+  const imagePixel = point => point?.pixel || point?.draft;
 
   function notice(text, error = false) {
     if (!text) return;
@@ -112,7 +113,7 @@
     }
     if (preferServer && byCode.has(state.selected)) selected = state.selected;
     if (!byCode.has(selected)) selected = byCode.has(state.selected) ? state.selected : null;
-    const pixel = byCode.get(selected)?.pixel;
+    const pixel = imagePixel(byCode.get(selected));
     if (geographicPreview && (preferServer || geographicPreview.code !== selected
       || pixel?.[0] !== geographicPreview.x || pixel?.[1] !== geographicPreview.y)) geographicPreview = null;
     stateVersion++;
@@ -126,6 +127,7 @@
     $("undo").title = state.undoLabel ? "撤销 " + state.undoLabel + " (Ctrl+Z)" : "撤销 (Ctrl+Z)";
     $("save").disabled = $("saveAs").disabled = points.length === 0;
     $("counts").textContent = points.length + " 个站点 · " + points.filter(point => point.pixel).length + " 已标注";
+    if (state.draftCount) $("counts").textContent += " · " + state.draftCount + " 待核对";
     updateSelection();
     updateCommandAvailability();
     scheduleDraw();
@@ -137,8 +139,10 @@
     for (const id of ["save", "saveAs", "updateNied"])
       $(id).disabled = updatingNied || points.length === 0;
     $("undo").disabled = updatingNied || undoDepth === 0;
-    $("clear").disabled = updatingNied || !byCode.get(selected)?.pixel;
+    $("clear").disabled = updatingNied || !imagePixel(byCode.get(selected));
     $("suspend").disabled = updatingNied || !byCode.has(selected);
+    $("fillDrafts").disabled = updatingNied || !points.some(point => !point.pixel && !point.draft);
+    $("confirmDraft").disabled = updatingNied || !byCode.get(selected)?.draft;
     $("refresh").disabled = $("source").disabled = updatingNied;
   }
 
@@ -147,9 +151,10 @@
     upper.clearRect(0, 0, 352, 400);
     lower.clearRect(0, 0, 1024, 1024);
     for (const point of points) {
-      if (point.pixel) {
-        upper.fillStyle = point.suspended ? "#929292" : point.type === "KiK-net" ? "#e34c4c" : "#e9a126";
-        upper.fillRect(point.pixel[0], point.pixel[1], 1, 1);
+      const pixel = imagePixel(point);
+      if (pixel) {
+        upper.fillStyle = point.draft ? "#b06400" : point.suspended ? "#929292" : point.type === "KiK-net" ? "#e34c4c" : "#e9a126";
+        upper.fillRect(pixel[0], pixel[1], 1, 1);
       }
       if (point.geo) {
         lower.fillStyle = point.suspended ? "#929292" : point.pixel ? "#318b6b" : "#4478cb";
@@ -189,13 +194,13 @@
       styleConflictRow(row);
       const coordinates = point.lat == null ? "未设置" : point.lat.toFixed(5) + ", " + point.lon.toFixed(5);
       [point.code, point.type, point.suspended ? "是" : "否", point.name, point.region, coordinates,
-        point.pixel ? point.pixel.join(", ") : "未设置"].forEach((value, column) => {
+        point.pixel ? point.pixel.join(", ") : point.draft ? "待核对 " + point.draft.join(", ") : "未设置"].forEach((value, column) => {
         const cell = document.createElement("span");
         cell.textContent = value || "";
         cell.title = value || "";
         cell.setAttribute("role", "gridcell");
         if (column === 0) cell.className = "code";
-        if (column === 6 && !point.pixel) cell.className = "missing";
+        if (column === 6 && !point.pixel) cell.className = point.draft ? "draft" : "missing";
         row.appendChild(cell);
       });
       fragment.appendChild(row);
@@ -229,31 +234,42 @@
 
   function updateSelection() {
     const point = byCode.get(selected);
-    const estimate = point && !point.pixel ? ImageCoordinates.latLonToImage(point.lat, point.lon) : null;
+    const estimate = point && !imagePixel(point) ? ImageCoordinates.latLonToImage(point.lat, point.lon) : null;
     estimatedPoint = ImageCoordinates.isInsideImage(estimate) ? [estimate.x, estimate.y] : null;
-    $("clear").disabled = updatingNied || !point?.pixel;
+    $("clear").disabled = updatingNied || !imagePixel(point);
+    $("clear").textContent = point?.draft ? "清除当前草稿" : "清除图像坐标";
     $("suspend").disabled = updatingNied || !point;
+    $("confirmDraft").disabled = updatingNied || !point?.draft;
     $("selection").textContent = point ? point.code + " " + point.name + " | 图像坐标：" + (point.pixel ? point.pixel.join(", ") : "未设置") : "未选择观测点";
-    if (point && !point.pixel) {
+    if (point?.draft) {
+      const [cx, cy] = point.draftCenter, [x, y] = point.draft;
+      $("selection").textContent += " | 待核对草稿：" + x + ", " + y
+        + " | 中心：" + cx + ", " + cy + " | 偏移：" + (x - cx) + ", " + (y - cy) + "（尚未写入）";
+      if (x - cx < -8 || x - cx > 7 || y - cy < -8 || y - cy > 7)
+        $("selection").textContent += "（偏移超出 -8～7，确认时重设中心）";
+    } else if (point && !point.pixel) {
       $("selection").textContent += estimatedPoint ? " | 估算中心：" + estimatedPoint.join(", ") + "（仅供定位）"
         : estimate ? " | 估算中心：" + estimate.x + ", " + estimate.y + "（超出底图范围）"
         : " | 无法估算中心（经纬度无效或不在对应区域）";
     }
     $("selection").title = $("selection").textContent;
     updateGeographicPreview();
-    conflicts = point?.pixel ? points.filter(other => other !== point && other.pixel
-      && Math.abs(other.pixel[0] - point.pixel[0]) <= 1 && Math.abs(other.pixel[1] - point.pixel[1]) <= 1) : [];
+    const pixel = imagePixel(point);
+    conflicts = pixel ? points.filter(other => {
+      const candidate = imagePixel(other);
+      return other !== point && candidate && Math.abs(candidate[0] - pixel[0]) <= 1 && Math.abs(candidate[1] - pixel[1]) <= 1;
+    }) : [];
     conflicts.sort((a, b) => a.code < b.code ? -1 : a.code > b.code ? 1 : 0);
     conflictColors = new Map(conflicts.map((other, index) => [other.code, {
       number: index + 1, color: CONFLICT_COLORS[index] || `hsl(${index * 137.508 % 360} 65% 28%)`
     }]));
-    $("conflicts").textContent = point?.pixel ? "3×3 安全圈：" + (conflicts.length ? conflicts.length + " 个冲突（仅提示）" : "无其他点位") : "";
+    $("conflicts").textContent = pixel ? "3×3 安全圈：" + (conflicts.length ? conflicts.length + " 个冲突（仅提示）" : "无其他点位") : "";
     for (const other of conflicts) {
       const entry = conflictColors.get(other.code), label = document.createElement("span");
       label.className = "conflict-station";
       label.dataset.code = other.code;
       label.style.setProperty("--conflict-color", entry.color);
-      label.textContent = "#" + entry.number + " " + other.code + " " + other.name;
+      label.textContent = "#" + entry.number + " " + other.code + " " + other.name + (other.draft ? "（待核对）" : "");
       $("conflicts").appendChild(label);
     }
     $("conflicts").classList.toggle("warning", conflicts.length > 0);
@@ -272,7 +288,7 @@
   function drawConflictPoints(context, view, upper) {
     for (let index = 0; index < conflicts.length; index++) {
       const other = conflicts[index];
-      const pixel = upper ? other.pixel : other.geo;
+      const pixel = upper ? imagePixel(other) : other.geo;
       if (!pixel) continue;
       const x = pixel[0] + (upper ? 0.5 : 0), y = pixel[1] + (upper ? 0.5 : 0);
       context.fillStyle = context.strokeStyle = conflictColors.get(other.code).color;
@@ -289,7 +305,7 @@
   function locate() {
     const point = byCode.get(selected);
     if (!point) return;
-    if (point.pixel || estimatedPoint) center(monitor, point.pixel || estimatedPoint);
+    if (imagePixel(point) || estimatedPoint) center(monitor, imagePixel(point) || estimatedPoint);
     if (geographicPreview?.geo || point.geo) center(geographic, geographicPreview?.geo || point.geo);
     scheduleDraw();
   }
@@ -311,7 +327,8 @@
 
   function previewImageClick(code, x, y) {
     const point = byCode.get(selected);
-    if (selected !== code || point?.pixel?.[0] !== x || point.pixel[1] !== y) return;
+    const pixel = imagePixel(point);
+    if (selected !== code || pixel?.[0] !== x || pixel[1] !== y) return;
     const location = ImageCoordinates.imageToLatLon(x, y);
     let geo = null;
     if (location) {
@@ -352,7 +369,7 @@
       context.drawImage(geoLayer, 0, 0);
     }
     if (!upper || $("show-points").checked) drawConflictPoints(context, view, upper);
-    const point = byCode.get(selected), pixel = upper ? point?.pixel || estimatedPoint : point?.geo;
+    const point = byCode.get(selected), pixel = upper ? imagePixel(point) || estimatedPoint : point?.geo;
     if (!upper && geographicPreview?.geo) {
       const [x, y] = geographicPreview.geo;
       context.save();
@@ -371,7 +388,7 @@
     }
     if (!pixel) return;
     context.lineWidth = 1 / view.scale;
-    if (upper && !point.pixel) {
+    if (upper && !imagePixel(point)) {
       context.save();
       const x = pixel[0] + 0.5, y = pixel[1] + 0.5;
       context.lineWidth = 1.5 / view.scale;
@@ -439,7 +456,7 @@
       if (view === monitor) {
         const px = Math.floor(x), py = Math.floor(y);
         if (event.button === 1) {
-          const point = points.find(item => item.pixel?.[0] === px && item.pixel?.[1] === py);
+          const point = points.find(item => imagePixel(item)?.[0] === px && imagePixel(item)?.[1] === py);
           if (point) select(point.code);
         } else if (event.button === 0 && selected && px >= 0 && px < 352 && py >= 0 && py < 400) {
           const code = selected, revision = ++previewRevision;
@@ -512,6 +529,15 @@
   $("search").addEventListener("input", () => filterRows());
   $("only-unmarked").addEventListener("change", () => filterRows());
   $("station-status").addEventListener("change", () => filterRows());
+  $("fillDrafts").onclick = () => {
+    const candidates = [];
+    for (const point of points) {
+      if (point.pixel || point.draft) continue;
+      const pixel = ImageCoordinates.latLonToImage(point.lat, point.lon);
+      if (ImageCoordinates.isInsideImage(pixel)) candidates.push({ code: point.code, ...pixel });
+    }
+    command("fillDrafts", { candidates }).catch(() => {});
+  };
   $("zoom-in").onclick = () => setZoom(monitor.scale + 1);
   $("zoom-out").onclick = () => setZoom(monitor.scale - 1);
   $("locate").onclick = locateStation;
@@ -524,7 +550,7 @@
   $("sync").onchange = () => { if ($("sync").checked) locate(); };
   $("dismiss").onclick = () => { $("notice").hidden = true; };
   new ResizeObserver(renderRows).observe($("table-scroll"));
-  setInterval(() => { if (byCode.get(selected)?.pixel || estimatedPoint) { blink = !blink; scheduleDraw(); } }, 500);
+  setInterval(() => { if (imagePixel(byCode.get(selected)) || estimatedPoint) { blink = !blink; scheduleDraw(); } }, 500);
 
   // Runtime tests exercise the same selection, zoom, virtualization and bridge used by the UI.
   window.editorTest = {

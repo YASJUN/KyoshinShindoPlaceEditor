@@ -56,6 +56,7 @@ internal static partial class EditorRegressionTests
             Run("Station files merge coordinates with NIED metadata and support undo", MergeStationFiles);
             Run("Station selection centers both maps and OSM can select stations", SynchronizedMaps);
             Run("Modern model imports and merges without creating native station rows", ModernHeadlessModel);
+            Run("Unconfirmed batch drafts never enter exports and confirmation supports undo", DraftAnnotations);
             Run("Latest NIED data incrementally updates an open JSON and rolls back safely", LatestNiedUpdate);
             Run("Visible full-data window sustains selection, zoom and edits", VisibleWindowResponsiveness);
             if (args.Length > 1 && args[1] == "--network")
@@ -338,7 +339,7 @@ internal static partial class EditorRegressionTests
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern IntPtr SendMessage(IntPtr window, int message, IntPtr wParam, IntPtr lParam);
 
-    private static Timer ReplyToClearDialog(DialogResult response, Action<string, bool> observed)
+    private static Timer ReplyToClearDialog(DialogResult response, Action<string, bool> observed, string dialogTitle = "清除图像坐标")
     {
         var timer = new Timer { Interval = 50 };
         timer.Tick += (sender, args) =>
@@ -346,7 +347,7 @@ internal static partial class EditorRegressionTests
             var window = GetActiveWindow();
             var title = new System.Text.StringBuilder(256);
             GetWindowText(window, title, title.Capacity);
-            if (title.ToString() != "清除图像坐标") return;
+            if (title.ToString() != dialogTitle) return;
             var message = new System.Text.StringBuilder();
             var child = IntPtr.Zero;
             while ((child = FindWindowEx(window, child, "Static", null)) != IntPtr.Zero)

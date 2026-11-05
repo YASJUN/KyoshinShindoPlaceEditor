@@ -10,6 +10,43 @@ namespace KyoshinShindoPlaceEditor
 	{
 		private bool _headless;
 		private ObservationPoint _modernSelection;
+		private sealed class DraftPoint
+		{
+			internal Point2 Center;
+			internal Point2 Pixel;
+		}
+		private readonly Dictionary<string, DraftPoint> _draftPoints = new Dictionary<string, DraftPoint>();
+		internal int ModernDraftCount => _points.Count(point => !point.Point.HasValue && _draftPoints.ContainsKey(point.Code));
+		internal bool ModernHasDraft(string code)
+			=> _draftPoints.ContainsKey(code) && _points.Any(point => point.Code == code && !point.Point.HasValue);
+
+		internal void ModernFillDrafts(Dictionary<string, Point2> candidates)
+		{
+			var additions = _points.Where(point => !point.Point.HasValue && !_draftPoints.ContainsKey(point.Code)
+				&& candidates.ContainsKey(point.Code)).ToArray();
+			if (additions.Any(point => !ObservationPointJsonDocument.IsInsideImage(candidates[point.Code])))
+				throw new InvalidDataException("草稿坐标必须在 352×400 范围内。");
+			if (additions.Length == 0) return;
+			RecordUndo("批量填充草稿", () => { foreach (var point in additions) _draftPoints.Remove(point.Code); });
+			foreach (var point in additions)
+				_draftPoints.Add(point.Code, new DraftPoint { Center = candidates[point.Code], Pixel = candidates[point.Code] });
+		}
+
+		internal void ModernConfirmDraft(string code)
+		{
+			ModernSelect(code);
+			if (!ModernHasDraft(code)) throw new InvalidDataException("当前站点没有待核对草稿。");
+			var point = _modernSelection;
+			var draft = _draftPoints[code];
+			var restoreMetadata = _jsonDocument?.ConfirmImagePoint(point, draft.Center, draft.Pixel);
+			RecordUndo("确认点位", () => {
+				point.Point = null;
+				restoreMetadata?.Invoke();
+				_draftPoints[code] = draft;
+			}, point);
+			point.Point = draft.Pixel;
+			_draftPoints.Remove(code);
+		}
 
 		internal void InitializeModernModel()
 		{
@@ -24,6 +61,8 @@ namespace KyoshinShindoPlaceEditor
 				{
 					var geo = point.Location == null ? (Point2?)null
 						: MercatorProjection.LatLngToPixel(point.Location, 5) - _mapLeftUpMapPosition;
+					DraftPoint draft;
+					if (point.Point.HasValue || !_draftPoints.TryGetValue(point.Code, out draft)) draft = null;
 					return new
 					{
 						code = point.Code, name = point.Name, region = point.Region,
@@ -32,6 +71,8 @@ namespace KyoshinShindoPlaceEditor
 						suspended = point.IsSuspended,
 						lat = point.Location?.Latitude, lon = point.Location?.Longitude,
 						pixel = point.Point.HasValue ? new[] { point.Point.Value.X, point.Point.Value.Y } : null,
+						draft = draft == null ? null : new[] { draft.Pixel.X, draft.Pixel.Y },
+						draftCenter = draft == null ? null : new[] { draft.Center.X, draft.Center.Y },
 						geo = geo.HasValue ? new[] { geo.Value.X, geo.Value.Y } : null
 					};
 				}).ToArray();
@@ -41,6 +82,7 @@ namespace KyoshinShindoPlaceEditor
 				patch = changedCode == null ? null : rows.FirstOrDefault(),
 				selected = _modernSelection?.Code,
 				path = _lastFilePath,
+				draftCount = ModernDraftCount,
 				undoCount = _undoHistory.Count,
 				undoLabel = _undoHistory.Count == 0 ? "" : _undoHistory.Last().Label
 			};
@@ -51,6 +93,7 @@ namespace KyoshinShindoPlaceEditor
 			string error, report;
 			if (!TryLoadFile(path, out error, out report))
 				throw new InvalidDataException(error);
+			_draftPoints.Clear();
 			return report;
 		}
 
@@ -100,6 +143,14 @@ namespace KyoshinShindoPlaceEditor
 			var pixel = x.HasValue ? new Point2(x.Value, y.Value) : (Point2?)null;
 			if (pixel.HasValue && !ObservationPointJsonDocument.IsInsideImage(pixel.Value))
 				throw new InvalidDataException("图像坐标必须在 352×400 范围内。");
+			if (ModernHasDraft(code) && pixel.HasValue)
+			{
+				var previous = _draftPoints[code];
+				if (previous.Pixel == pixel.Value) return;
+				RecordUndo("调整草稿", () => _draftPoints[code] = previous, _modernSelection);
+				_draftPoints[code] = new DraftPoint { Center = previous.Center, Pixel = pixel.Value };
+				return;
+			}
 			SetSelectedImagePoint(pixel);
 		}
 
@@ -112,6 +163,19 @@ namespace KyoshinShindoPlaceEditor
 		internal bool ModernClear(string code, System.Windows.Forms.IWin32Window owner)
 		{
 			ModernSelect(code);
+			if (ModernHasDraft(code))
+			{
+				if (System.Windows.Forms.MessageBox.Show(owner,
+					$"确定清除以下站点的待核对草稿吗？\n\n{code}  {_modernSelection.Name}"
+					+ "\n仅清除内存草稿，保留站点记录和经纬度。可使用 Ctrl+Z 撤销。",
+					"清除图像坐标", System.Windows.Forms.MessageBoxButtons.YesNo,
+					System.Windows.Forms.MessageBoxIcon.Warning, System.Windows.Forms.MessageBoxDefaultButton.Button2)
+					!= System.Windows.Forms.DialogResult.Yes) return false;
+				var draft = _draftPoints[code];
+				RecordUndo("清除草稿", () => _draftPoints[code] = draft, _modernSelection);
+				_draftPoints.Remove(code);
+				return true;
+			}
 			return ClearSelectedImagePoint(owner);
 		}
 

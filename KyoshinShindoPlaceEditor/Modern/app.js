@@ -3,6 +3,7 @@
   const $ = id => document.getElementById(id);
   const ROW_HEIGHT = 30;
   const CONFLICT_COLORS = ["#c33737", "#006ab3", "#1c753f", "#9a42ad", "#995000", "#007078", "#a62b62", "#626c12"];
+  const MAX_ZOOM = 10;
   let points = [], byCode = new Map(), filtered = [], selected = null, blink = true;
   let nextId = 1, queue = Promise.resolve(), pendingCount = 0, stateVersion = 0;
   let undoDepth = 0;
@@ -16,6 +17,8 @@
   const geographic = { canvas: $("geographic"), x: -344, y: -520, scale: 1, width: 0, height: 0 };
   let conflicts = [], rowFrame = 0, drawFrame = 0, imageWarning = "", estimatedPoint = null;
   let conflictColors = new Map();
+  let geographicPreview = null;
+  let previewRevision = 0;
 
   function notice(text, error = false) {
     if (!text) return;
@@ -60,12 +63,17 @@
       pending.delete(data.id);
       if (data.error) { job.reject(new Error(data.error)); return; }
       testing = data.testing === true;
+      if (job.action === "open" || job.action === "undo") { geographicPreview = null; previewRevision++; }
       if (data.state) applyState(data.state, data.dirty, job.action === "undo");
       notice(data.notice);
       job.resolve(data);
       return;
     }
-    if (data.type === "state") applyState(data.state, data.dirty);
+    if (data.type === "state") {
+      geographicPreview = null;
+      previewRevision++;
+      applyState(data.state, data.dirty);
+    }
     if (data.type === "images") {
       loadImage("osm", data.osm);
       loadImage("baseMap", data.baseMap);
@@ -104,6 +112,9 @@
     }
     if (preferServer && byCode.has(state.selected)) selected = state.selected;
     if (!byCode.has(selected)) selected = byCode.has(state.selected) ? state.selected : null;
+    const pixel = byCode.get(selected)?.pixel;
+    if (geographicPreview && (preferServer || geographicPreview.code !== selected
+      || pixel?.[0] !== geographicPreview.x || pixel?.[1] !== geographicPreview.y)) geographicPreview = null;
     stateVersion++;
     undoDepth = state.undoCount;
     rebuildLayers();
@@ -192,6 +203,8 @@
 
   function select(code, scroll = true) {
     if (!byCode.has(code)) return;
+    geographicPreview = null;
+    previewRevision++;
     selected = code;
     blink = true;
     updateSelection();
@@ -224,6 +237,7 @@
         : " | 无法估算中心（经纬度无效或不在对应区域）";
     }
     $("selection").title = $("selection").textContent;
+    updateGeographicPreview();
     conflicts = point?.pixel ? points.filter(other => other !== point && other.pixel
       && Math.abs(other.pixel[0] - point.pixel[0]) <= 1 && Math.abs(other.pixel[1] - point.pixel[1]) <= 1) : [];
     conflicts.sort((a, b) => a.code < b.code ? -1 : a.code > b.code ? 1 : 0);
@@ -260,10 +274,11 @@
       const x = pixel[0] + (upper ? 0.5 : 0), y = pixel[1] + (upper ? 0.5 : 0);
       context.fillStyle = context.strokeStyle = conflictColors.get(other.code).color;
       context.fillRect(pixel[0] - (upper ? 0 : 1), pixel[1] - (upper ? 0 : 1), upper ? 1 : 3, upper ? 1 : 3);
-      // Stagger radii so overlapping/adjacent centers cannot hide every other color.
+      // Clear the selected pixel's square even at 10x, then stagger overlapping rings.
+      const radius = (upper ? Math.max(4, view.scale / Math.SQRT2 + 2) : 10) + index * 4;
       context.lineWidth = 2 / view.scale;
       context.beginPath();
-      context.arc(x, y, ((upper ? 4 : 10) + index * 4) / view.scale, 0, Math.PI * 2);
+      context.arc(x, y, radius / view.scale, 0, Math.PI * 2);
       context.stroke();
     }
   }
@@ -272,7 +287,41 @@
     const point = byCode.get(selected);
     if (!point) return;
     if (point.pixel || estimatedPoint) center(monitor, point.pixel || estimatedPoint);
-    if (point.geo) center(geographic, point.geo);
+    if (geographicPreview?.geo || point.geo) center(geographic, geographicPreview?.geo || point.geo);
+    scheduleDraw();
+  }
+
+  function updateGeographicPreview() {
+    const status = $("geo-preview"), location = geographicPreview?.location;
+    status.hidden = !geographicPreview;
+    status.textContent = location ? "图像点击估算：" + location.latitude.toFixed(5) + ", "
+      + location.longitude.toFixed(5) + "（临时）" : "无法换算此图像位置（临时预览）";
+    status.title = status.textContent;
+  }
+
+  function locateStation() {
+    geographicPreview = null;
+    previewRevision++;
+    updateGeographicPreview();
+    locate();
+  }
+
+  function previewImageClick(code, x, y) {
+    const point = byCode.get(selected);
+    if (selected !== code || point?.pixel?.[0] !== x || point.pixel[1] !== y) return;
+    const location = ImageCoordinates.imageToLatLon(x, y);
+    let geo = null;
+    if (location) {
+      // Match MercatorProjection's PointF/truncation, zoom 5 and map origin (26,10) tiles.
+      const sin = Math.max(-0.9999, Math.min(0.9999, Math.sin(location.latitude * Math.PI / 180)));
+      geo = [
+        Math.trunc(Math.fround(128 + location.longitude * (256 / 360)) * 32) - 26 * 256,
+        Math.trunc(Math.fround(128 - Math.log((1 + sin) / (1 - sin)) * 256 / (4 * Math.PI)) * 32) - 10 * 256
+      ];
+    }
+    geographicPreview = { code, x, y, location, geo };
+    updateGeographicPreview();
+    if ($("sync").checked && geo) center(geographic, geo);
     scheduleDraw();
   }
   function center(view, pixel) {
@@ -301,6 +350,22 @@
     }
     if (!upper || $("show-points").checked) drawConflictPoints(context, view, upper);
     const point = byCode.get(selected), pixel = upper ? point?.pixel || estimatedPoint : point?.geo;
+    if (!upper && geographicPreview?.geo) {
+      const [x, y] = geographicPreview.geo;
+      context.save();
+      context.strokeStyle = "#b06400";
+      context.lineWidth = 2 / view.scale;
+      context.setLineDash([4 / view.scale, 3 / view.scale]);
+      context.beginPath();
+      context.arc(x, y, 10 / view.scale, 0, Math.PI * 2);
+      context.stroke();
+      context.setLineDash([]);
+      context.beginPath();
+      context.moveTo(x - 5 / view.scale, y); context.lineTo(x + 5 / view.scale, y);
+      context.moveTo(x, y - 5 / view.scale); context.lineTo(x, y + 5 / view.scale);
+      context.stroke();
+      context.restore();
+    }
     if (!pixel) return;
     context.lineWidth = 1 / view.scale;
     if (upper && !point.pixel) {
@@ -334,12 +399,12 @@
   }
 
   function setZoom(value) {
-    const next = Math.max(1, Math.min(5, value));
+    const next = Math.max(1, Math.min(MAX_ZOOM, value));
     const x = (monitor.width / 2 - monitor.x) / monitor.scale, y = (monitor.height / 2 - monitor.y) / monitor.scale;
     monitor.scale = next;
     monitor.x = monitor.width / 2 - x * next; monitor.y = monitor.height / 2 - y * next;
     $("zoom-value").textContent = next + "×";
-    $("zoom-out").disabled = next === 1; $("zoom-in").disabled = next === 5;
+    $("zoom-out").disabled = next === 1; $("zoom-in").disabled = next === MAX_ZOOM;
     if ($("sync").checked) locate();
     scheduleDraw();
   }
@@ -373,8 +438,12 @@
         if (event.button === 1) {
           const point = points.find(item => item.pixel?.[0] === px && item.pixel?.[1] === py);
           if (point) select(point.code);
-        } else if (event.button === 0 && selected && px >= 0 && px < 352 && py >= 0 && py < 400)
-          command("edit", { code: selected, x: px, y: py }).catch(() => {});
+        } else if (event.button === 0 && selected && px >= 0 && px < 352 && py >= 0 && py < 400) {
+          const code = selected, revision = ++previewRevision;
+          command("edit", { code, x: px, y: py }).then(result => {
+            if (result && revision === previewRevision) previewImageClick(code, px, py);
+          }).catch(() => {});
+        }
       } else {
         let nearest = null, distance = (8 / view.scale) ** 2;
         for (const point of points) {
@@ -396,7 +465,7 @@
       event.preventDefault();
       if (view === monitor) setZoom(view.scale + (event.deltaY < 0 ? 1 : -1));
       else {
-        const old = view.scale, next = Math.max(0.5, Math.min(4, old * (event.deltaY < 0 ? 1.25 : 0.8)));
+        const old = view.scale, next = Math.max(0.5, Math.min(MAX_ZOOM, old * (event.deltaY < 0 ? 1.25 : 0.8)));
         const bounds = view.canvas.getBoundingClientRect(), x = event.clientX - bounds.left, y = event.clientY - bounds.top;
         view.x = x - (x - view.x) * next / old; view.y = y - (y - view.y) * next / old; view.scale = next;
         scheduleDraw();
@@ -427,7 +496,7 @@
     if (event.ctrlKey) {
       const key = event.key.toLowerCase(), action = key === "z" ? "undo" : key === "o" ? "open" : key === "s" ? (event.shiftKey ? "saveAs" : "save") : null;
       if (action) { event.preventDefault(); command(action).catch(() => {}); }
-      if (key === "l") { event.preventDefault(); locate(); }
+      if (key === "l") { event.preventDefault(); locateStation(); }
     } else if (document.activeElement === $("table-scroll") && ["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) {
       event.preventDefault();
       const index = filtered.findIndex(point => point.code === selected);
@@ -440,7 +509,7 @@
   $("search").addEventListener("input", () => filterRows());
   $("zoom-in").onclick = () => setZoom(monitor.scale + 1);
   $("zoom-out").onclick = () => setZoom(monitor.scale - 1);
-  $("locate").onclick = locate;
+  $("locate").onclick = locateStation;
   $("refresh").onclick = () => command("refresh", { source: $("source").value }).catch(() => {});
   $("source").onchange = () => {
     delete images.monitor; scheduleDraw();
@@ -464,7 +533,7 @@
         for (let index = 0; index < count; index++) {
           const start = performance.now();
           select(points[index * 47 % points.length].code);
-          if (index % 10 === 0) setZoom(index / 10 % 5 + 1);
+          if (index % 10 === 0) setZoom(index / 10 % MAX_ZOOM + 1);
           const selectionEnd = performance.now();
           if (index % 3 === 0) {
             await command("edit", { code: selected, x: 100 + index % 30, y: 100 });

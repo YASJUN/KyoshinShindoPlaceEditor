@@ -23,6 +23,7 @@ foreach ($folder in @('Modern', 'runtimes', 'x86', 'x64', 'arm64')) {
 }
 Copy-Item -LiteralPath (Join-Path $ReleaseDir 'KyoshinShindoPlaceEditor.exe.config') -Destination $bin -Force
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'ImageMarkerScenario.js') -Destination $bin -Force
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'ImageClickScenario.js') -Destination $bin -Force
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'SafetyConflictScenario.js') -Destination $bin -Force
 $testExe = Join-Path $bin 'EditorRegressionTests.exe'
 & $compiler /nologo /target:exe "/out:$testExe" `

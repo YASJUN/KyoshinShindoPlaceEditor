@@ -1,7 +1,7 @@
 "use strict";
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
-const { latLonToImage, isInsideImage } = require("../KyoshinShindoPlaceEditor/Modern/image-coordinates.js");
+const { latLonToImage, imageToLatLon, isInsideImage } = require("../KyoshinShindoPlaceEditor/Modern/image-coordinates.js");
 
 for (const [latitude, longitude, expected] of [
   [35.6812, 139.7671, { x: 227, y: 260 }],
@@ -63,4 +63,46 @@ test("conversion preserves out-of-bounds results; rendering rejects them without
     assert.equal(isInsideImage(point), false);
   assert.equal(isInsideImage({ x: 0, y: 0 }), true);
   assert.equal(isInsideImage({ x: 351, y: 399 }), true);
+});
+
+test("inverse maps mainland and inset pixels to approximate geographic coordinates", () => {
+  for (const [x, y, latitude, longitude] of [
+    [227, 260, 35.6812, 139.7671], [140, 284, 34.6937, 135.5023],
+    [259, 78, 43.0618, 141.3545], [107, 147, 26.2124, 127.6809],
+    [148, 92, 28.451, 129.6784], [154, 56, 29.8999, 130]
+  ]) {
+    const result = imageToLatLon(x, y);
+    assert.ok(Math.abs(result.latitude - latitude) < 0.021);
+    assert.ok(Math.abs(result.longitude - longitude) < 0.025);
+    assert.deepEqual(latLonToImage(result.latitude, result.longitude), { x, y });
+  }
+});
+
+test("inverse rejects invalid, out-of-image and unmappable inset coordinates", () => {
+  for (const value of [NaN, Infinity, -Infinity, undefined, null, "100"])
+    for (const pair of [[value, 100], [100, value]])
+      assert.equal(imageToLatLon(...pair), null);
+  for (const pair of [[-1, 200], [352, 200], [200, -1], [200, 400], [154, 55]])
+    assert.equal(imageToLatLon(...pair), null);
+});
+
+test("inverse uses the strict inset boundaries and preserves round-trip pixels", () => {
+  for (const [x, y, inset] of [[171, 100, true], [172, 100, false], [110, 207, true],
+    [110, 208, false], [141, 171, true], [141, 172, false]]) {
+    const result = imageToLatLon(x, y);
+    assert.equal(result.latitude < 29.9, inset);
+    assert.deepEqual(latLonToImage(result.latitude, result.longitude), { x, y });
+  }
+});
+
+test("every mapped image pixel round trips without clamping or changing regions", () => {
+  for (let y = 0; y < 400; y++)
+    for (let x = 0; x < 352; x++) {
+      const result = imageToLatLon(x, y);
+      if (result) {
+        const pixel = latLonToImage(result.latitude, result.longitude);
+        assert.deepEqual({ x: pixel.x + 0, y: pixel.y + 0 }, { x, y });
+      }
+      else assert.ok(x < 172 && y < 56, `Unexpected unmappable pixel: ${x},${y}`);
+    }
 });

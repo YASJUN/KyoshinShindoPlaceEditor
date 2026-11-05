@@ -28,10 +28,11 @@ main { display: grid; grid-template-columns: minmax(340px, 38%) minmax(0, 1fr); 
 .mapbar select { max-width: 110px; }
 .zoom { display: flex; align-items: center; gap: 2px; }
 .zoom button { width: 27px; padding: 0; font-size: 17px; }
-.zoom output { width: 29px; text-align: center; font-variant-numeric: tabular-nums; }
+.zoom output { width: 34px; text-align: center; font-variant-numeric: tabular-nums; }
 .canvas-wrap { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; background: #eff3f3; }
 canvas { width: 100%; height: 100%; display: block; touch-action: none; }
 #image-status { position: absolute; bottom: 7px; left: 8px; max-width: calc(100% - 16px); background: #ffffffe6; padding: 2px 5px; color: #6a7679; font-size: 11px; pointer-events: none; }
+#geo-preview { position: absolute; top: 7px; left: 8px; max-width: calc(100% - 16px); background: #fffffff2; padding: 3px 5px; color: #935300; font-size: 11px; pointer-events: none; overflow-wrap: anywhere; }
 .attribution { position: absolute; right: 4px; bottom: 3px; font-size: 10px; background: #fffd; color: #59666d; pointer-events: none; }
 .map-options { display: flex; flex-wrap: wrap; gap: 9px; align-items: center; padding: 5px 8px; font-size: 12px; border-top: 1px solid #e0e5e7; }
 .map-options label { display: inline-flex; align-items: center; white-space: nowrap; gap: 2px; }

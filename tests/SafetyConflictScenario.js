@@ -61,7 +61,7 @@
   checkRows();
   assert(rows().some(row => row.dataset.code === "ROOT" && row.classList.contains("selected") && !row.classList.contains("conflicting")),
     "The current station lost selection styling or was counted as its own conflict");
-  for (const scale of [1, 3, 5]) {
+  for (const scale of [1, 3, 5, 10]) {
     window.editorTest.setZoom(scale);
     await tick();
     mapColors("monitor");

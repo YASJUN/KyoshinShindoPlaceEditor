@@ -22,7 +22,7 @@
     document.getElementById("notice").hidden = true;
     document.getElementById("sync").checked = true;
     for (const [code, x, y] of [["ESTTOKYO", 227, 260], ["ESTNAHA", 107, 147], ["ESTEDGE", 154, 56]]) {
-      for (const scale of [1, 3, 5]) {
+      for (const scale of [1, 3, 5, 10]) {
         safetyDraws = 0;
         window.editorTest.select(code);
         window.editorTest.setZoom(scale);

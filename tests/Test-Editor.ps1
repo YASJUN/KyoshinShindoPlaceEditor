@@ -23,6 +23,7 @@ foreach ($folder in @('Modern', 'runtimes', 'x86', 'x64', 'arm64')) {
 }
 Copy-Item -LiteralPath (Join-Path $ReleaseDir 'KyoshinShindoPlaceEditor.exe.config') -Destination $bin -Force
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'ImageMarkerScenario.js') -Destination $bin -Force
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'SafetyConflictScenario.js') -Destination $bin -Force
 $testExe = Join-Path $bin 'EditorRegressionTests.exe'
 & $compiler /nologo /target:exe "/out:$testExe" `
     "/reference:$(Join-Path $bin 'KyoshinShindoPlaceEditor.exe')" `
@@ -30,7 +31,8 @@ $testExe = Join-Path $bin 'EditorRegressionTests.exe'
     /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Web.Extensions.dll `
     "/reference:$bin\Microsoft.Web.WebView2.Core.dll" "/reference:$bin\Microsoft.Web.WebView2.WinForms.dll" `
     (Join-Path $PSScriptRoot 'EditorRegressionTests.cs') `
-    (Join-Path $PSScriptRoot 'ImageCoordinateTests.cs')
+    (Join-Path $PSScriptRoot 'ImageCoordinateTests.cs') `
+    (Join-Path $PSScriptRoot 'SafetyConflictTests.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Regression tests did not compile.' }
 if ($ClearOnly) { & $testExe $SamplePath --clear }
 elseif ($NiedUpdateOnly) { & $testExe $SamplePath --nied-update }

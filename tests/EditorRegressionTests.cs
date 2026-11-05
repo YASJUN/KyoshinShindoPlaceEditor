@@ -757,6 +757,7 @@ internal static partial class EditorRegressionTests
                     Assert(await browser.ExecuteScriptAsync("!!document.getElementById('updateNied')") == "true",
                         "The open JSON has no one-step latest NIED update button.");
                     await VerifyImageEstimates(form, browser);
+                    await VerifySafetyConflictColors(form, browser);
                     var serializer = new JavaScriptSerializer();
                     var evaluation = await browser.CoreWebView2.CallDevToolsProtocolMethodAsync("Runtime.evaluate",
                         serializer.Serialize(new { expression = "window.editorTest.benchmark(100)", awaitPromise = true, returnByValue = true }));

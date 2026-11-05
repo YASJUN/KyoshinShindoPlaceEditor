@@ -2,6 +2,7 @@
 (() => {
   const $ = id => document.getElementById(id);
   const ROW_HEIGHT = 30;
+  const CONFLICT_COLORS = ["#c33737", "#006ab3", "#1c753f", "#9a42ad", "#995000", "#007078", "#a62b62", "#626c12"];
   let points = [], byCode = new Map(), filtered = [], selected = null, blink = true;
   let nextId = 1, queue = Promise.resolve(), pendingCount = 0, stateVersion = 0;
   let undoDepth = 0;
@@ -14,6 +15,7 @@
   const monitor = { canvas: $("monitor"), x: 0, y: 0, scale: 1, width: 0, height: 0 };
   const geographic = { canvas: $("geographic"), x: -344, y: -520, scale: 1, width: 0, height: 0 };
   let conflicts = [], rowFrame = 0, drawFrame = 0, imageWarning = "", estimatedPoint = null;
+  let conflictColors = new Map();
 
   function notice(text, error = false) {
     if (!text) return;
@@ -170,6 +172,7 @@
       row.setAttribute("role", "row");
       row.setAttribute("aria-rowindex", index + 1);
       row.setAttribute("aria-selected", point.code === selected);
+      styleConflictRow(row);
       const coordinates = point.lat == null ? "未设置" : point.lat.toFixed(5) + ", " + point.lon.toFixed(5);
       [point.code, point.type, point.suspended ? "是" : "否", point.name, point.region, coordinates,
         point.pixel ? point.pixel.join(", ") : "未设置"].forEach((value, column) => {
@@ -223,9 +226,46 @@
     $("selection").title = $("selection").textContent;
     conflicts = point?.pixel ? points.filter(other => other !== point && other.pixel
       && Math.abs(other.pixel[0] - point.pixel[0]) <= 1 && Math.abs(other.pixel[1] - point.pixel[1]) <= 1) : [];
+    conflicts.sort((a, b) => a.code < b.code ? -1 : a.code > b.code ? 1 : 0);
+    conflictColors = new Map(conflicts.map((other, index) => [other.code, {
+      number: index + 1, color: CONFLICT_COLORS[index] || `hsl(${index * 137.508 % 360} 65% 28%)`
+    }]));
     $("conflicts").textContent = point?.pixel ? "3×3 安全圈：" + (conflicts.length ? conflicts.length + " 个冲突（仅提示）" : "无其他点位") : "";
+    for (const other of conflicts) {
+      const entry = conflictColors.get(other.code), label = document.createElement("span");
+      label.className = "conflict-station";
+      label.dataset.code = other.code;
+      label.style.setProperty("--conflict-color", entry.color);
+      label.textContent = "#" + entry.number + " " + other.code + " " + other.name;
+      $("conflicts").appendChild(label);
+    }
     $("conflicts").classList.toggle("warning", conflicts.length > 0);
     $("conflicts").title = conflicts.map(other => other.code + " " + other.name).join("\n");
+    for (const row of $("visible-rows").children) styleConflictRow(row);
+  }
+
+  function styleConflictRow(row) {
+    const entry = conflictColors.get(row.dataset.code);
+    row.classList.toggle("conflicting", !!entry);
+    if (entry) row.style.setProperty("--conflict-color", entry.color);
+    else row.style.removeProperty("--conflict-color");
+    row.title = entry ? "3×3 安全圈点位 #" + entry.number + "：" + row.dataset.code : "";
+  }
+
+  function drawConflictPoints(context, view, upper) {
+    for (let index = 0; index < conflicts.length; index++) {
+      const other = conflicts[index];
+      const pixel = upper ? other.pixel : other.geo;
+      if (!pixel) continue;
+      const x = pixel[0] + (upper ? 0.5 : 0), y = pixel[1] + (upper ? 0.5 : 0);
+      context.fillStyle = context.strokeStyle = conflictColors.get(other.code).color;
+      context.fillRect(pixel[0] - (upper ? 0 : 1), pixel[1] - (upper ? 0 : 1), upper ? 1 : 3, upper ? 1 : 3);
+      // Stagger radii so overlapping/adjacent centers cannot hide every other color.
+      context.lineWidth = 2 / view.scale;
+      context.beginPath();
+      context.arc(x, y, ((upper ? 4 : 10) + index * 4) / view.scale, 0, Math.PI * 2);
+      context.stroke();
+    }
   }
 
   function locate() {
@@ -259,6 +299,7 @@
       if (images.osm) context.drawImage(images.osm, 0, 0, 1024, 1024);
       context.drawImage(geoLayer, 0, 0);
     }
+    if (!upper || $("show-points").checked) drawConflictPoints(context, view, upper);
     const point = byCode.get(selected), pixel = upper ? point?.pixel || estimatedPoint : point?.geo;
     if (!pixel) return;
     context.lineWidth = 1 / view.scale;
@@ -417,18 +458,26 @@
     select, setZoom, command,
     async benchmark(count = 100) {
       if (!testing) throw new Error("性能测试仅可在测试实例中运行。");
-      let maximum = 0, previous = performance.now(), edits = 0;
+      let maximum = 0, previous = performance.now(), edits = 0, worst = null;
       const initialUndo = undoDepth;
       try {
         for (let index = 0; index < count; index++) {
+          const start = performance.now();
           select(points[index * 47 % points.length].code);
           if (index % 10 === 0) setZoom(index / 10 % 5 + 1);
+          const selectionEnd = performance.now();
           if (index % 3 === 0) {
             await command("edit", { code: selected, x: 100 + index % 30, y: 100 });
             edits++;
           }
+          const commandEnd = performance.now();
           await new Promise(resolve => requestAnimationFrame(resolve));
-          const now = performance.now(); maximum = Math.max(maximum, now - previous); previous = now;
+          const now = performance.now();
+          if (now - previous > maximum) {
+            maximum = now - previous;
+            worst = { index, selectMs: selectionEnd - start, bridgeMs: commandEnd - selectionEnd, frameMs: now - commandEnd };
+          }
+          previous = now;
         }
       } finally {
         while (undoDepth > initialUndo) await command("undo");
@@ -437,7 +486,7 @@
       const pixels = context.getImageData(0, 0, $("monitor").width, $("monitor").height).data;
       let colors = new Set();
       for (let offset = 0; offset < pixels.length; offset += 400) colors.add(pixels.slice(offset, offset + 3).join(","));
-      return { count: points.length, maximum, edits, renderedRows: $("visible-rows").children.length, colors: colors.size, selected };
+      return { count: points.length, maximum, worst, edits, renderedRows: $("visible-rows").children.length, colors: colors.size, selected };
     }
   };
   command("ready").catch(error => notice("初始化失败：" + error.message, true));

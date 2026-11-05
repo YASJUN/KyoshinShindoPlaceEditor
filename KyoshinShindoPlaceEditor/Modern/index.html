@@ -67,7 +67,7 @@
       <div class="selection-actions"><button data-action="clear" id="clear" disabled>清除图像坐标</button><button data-action="suspend" id="suspend" disabled>切换停用状态</button></div>
     </section>
   </main>
-  <footer><span id="selection">未选择观测点</span><span id="conflicts"></span></footer>
+  <footer><span id="selection">未选择观测点</span><span id="conflicts" role="status" aria-live="polite"></span></footer>
   <div id="notice" role="status" hidden><span></span><button id="dismiss" title="关闭提示" aria-label="关闭提示">×</button></div>
   <div id="context-menu" class="menu" hidden><button data-action="clear">清除图像坐标</button><button data-action="suspend">切换停用状态</button></div>
   <script src="image-coordinates.js"></script>

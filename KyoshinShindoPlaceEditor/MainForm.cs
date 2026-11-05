@@ -29,6 +29,7 @@ namespace KyoshinShindoPlaceEditor
 		private List<ObservationPoint> _points;
 		private ObservationPointJsonDocument _jsonDocument;
 		private bool _updatingList;
+		private readonly Dictionary<ObservationPoint, int> _pointRowIndexes = new Dictionary<ObservationPoint, int>();
 		private Point2 _mapLeftUpMapPosition = new Point2(13 * 2 * MercatorProjection.TileSize, 5 * 2 * MercatorProjection.TileSize);
 
 		private Point _prevPos;
@@ -200,6 +201,11 @@ namespace KyoshinShindoPlaceEditor
 		private void UpdateListValue()
 		{
 			_points = _points ?? new List<ObservationPoint>();
+			if (_headless)
+			{
+				if (!_points.Contains(_modernSelection)) _modernSelection = null;
+				return;
+			}
 
 			string oldText = Text;
 			bool wasEnabled = Enabled;
@@ -216,19 +222,23 @@ namespace KyoshinShindoPlaceEditor
 			try
 			{
 				listView1.Items.Clear();
-				listView1.Items.AddRange(_points.Select(p => new ListViewItem(new string[] {
+				var rows = _points.Select(p => new ListViewItem(new string[] {
 					p.Code, p.Type == ObservationPointType.Unknown ? "未知" : p.Type.ToNaturalString(),
 					p.IsSuspended ? "是" : "否", p.Name, p.Region,
 					p.Location?.ToString() ?? "未设置", p.Point?.ToString() ?? "未设置"
-				}) { Tag = p }).ToArray());
+				}) { Tag = p }).ToArray();
+				listView1.Items.AddRange(rows);
+				_pointRowIndexes.Clear();
+				for (var index = 0; index < _points.Count; index++)
+					_pointRowIndexes.Add(_points[index], index);
 
 				RedrawPointImage();
 
-				var selectedItem = listView1.Items.Cast<ListViewItem>().FirstOrDefault(item => item.Text == lastSelectedCode);
-				if (selectedItem != null)
+				var selectedIndex = _points.FindIndex(point => point.Code == lastSelectedCode);
+				if (selectedIndex >= 0)
 				{
-					selectedItem.Selected = true;
-					selectedItem.EnsureVisible();
+					listView1.Items[selectedIndex].Selected = true;
+					listView1.EnsureVisible(selectedIndex);
 				}
 			}
 			finally
@@ -271,9 +281,11 @@ namespace KyoshinShindoPlaceEditor
 
 		private void UpdatePointValue(ObservationPoint point)
 		{
-			var item = listView1.Items.Cast<ListViewItem>().FirstOrDefault(value => ReferenceEquals(value.Tag, point));
-			if (item != null)
+			if (_headless) return;
+			int index;
+			if (_pointRowIndexes.TryGetValue(point, out index))
 			{
+				var item = listView1.Items[index];
 				item.SubItems[2].Text = point.IsSuspended ? "是" : "否";
 				item.SubItems[6].Text = point.Point?.ToString() ?? "未设置";
 			}
@@ -323,7 +335,7 @@ namespace KyoshinShindoPlaceEditor
 			if (e.Button != MouseButtons.Left)
 				return;
 
-			if (listView1.SelectedItems.Count == 0)
+			if (listView1.SelectedIndices.Count == 0)
 				return;
 
 			SetSelectedImagePoint(clientpos);
@@ -572,7 +584,7 @@ namespace KyoshinShindoPlaceEditor
 
 		private void ContextMenuOpening(object sender, CancelEventArgs e)
 		{
-			if (listView1.SelectedItems.Count > 0)
+			if (listView1.SelectedIndices.Count > 0)
 				return;
 			e.Cancel = true;
 		}

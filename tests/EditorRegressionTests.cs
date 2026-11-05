@@ -24,6 +24,11 @@ internal static class EditorRegressionTests
         Directory.CreateDirectory(tempDir);
         try
         {
+            if (args.Length > 1 && args[1] == "--visible")
+            {
+                Run("Visible full-data window sustains selection, zoom and edits", VisibleWindowResponsiveness);
+                return failures == 0 ? 0 : 1;
+            }
             Run("Invalid render data never leaves the window disabled", RenderRestoresUi);
             Run("Real modern JSON loads all station fields", LoadsModernJson);
             Run("Unedited modern JSON round trip preserves all fields", RoundTripModernJson);
@@ -39,6 +44,8 @@ internal static class EditorRegressionTests
             Run("Large NIED edits keep selection stable without rebuilding every row", LargeNiedEdits);
             Run("Station files merge coordinates with NIED metadata and support undo", MergeStationFiles);
             Run("Station selection centers both maps and OSM can select stations", SynchronizedMaps);
+            Run("Modern model imports and merges without creating native station rows", ModernHeadlessModel);
+            Run("Visible full-data window sustains selection, zoom and edits", VisibleWindowResponsiveness);
             if (args.Length > 1 && args[1] == "--network")
                 Run("Official NIED downloads return valid original CSV bytes", LiveNiedDownloads);
             Console.WriteLine("RESULT: " + (tests - failures) + " passed, " + failures + " failed");
@@ -535,6 +542,101 @@ internal static class EditorRegressionTests
             Invoke(form, "UndoLastEdit");
             Invoke(form, "SaveFile", output);
             Assert(Equivalent(JsonRows(output), JsonRows(samplePath)), "Undo merge did not restore the original JSON metadata.");
+        }
+    }
+
+    private static void ModernHeadlessModel()
+    {
+        using (var model = new MainForm())
+        {
+            Invoke(model, "InitializeModernModel");
+            var officialDir = @"D:\KyoshinShindoPlaceEditor.0.0.6.0\NIED-original-20261105";
+            var files = new[] { Path.Combine(officialDir, "stationlist_knet.csv"), Path.Combine(officialDir, "stationlist_kiknet.csv") };
+            if (!files.All(File.Exists))
+            {
+                var kik = Path.Combine(tempDir, "kik.csv");
+                var knet = Path.Combine(tempDir, "knet.csv");
+                File.WriteAllText(kik, "KiK-net,ABSH01,Example,Official one,44.5276,142.8444,0,0,北海道,Hokkaido,operating\n", System.Text.Encoding.GetEncoding(932));
+                File.WriteAllText(knet, "K-NET,AIC001,Example,Official two,35,137,0,0,愛知県,Aichi,operating\n", System.Text.Encoding.GetEncoding(932));
+                files = new[] { kik, knet };
+            }
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            Invoke(model, "ModernImportNied", new object[] { files });
+            var imported = ((List<ObservationPoint>)Field(model, "_points")).Count;
+            Invoke(model, "ModernMerge", samplePath);
+            var merged = (List<ObservationPoint>)Field(model, "_points");
+            Assert(merged.Count == 1749 && merged.Count(point => point.Point.HasValue) == 1634, "Modern NIED/JSON merge lost stations or pixels.");
+            Assert(((ListView)Field(model, "listView1")).Items.Count == 0, "Modern mode still populates the native ListView.");
+            Assert(!((ListView)Field(model, "listView1")).IsHandleCreated, "Modern mode created a native station window.");
+            Invoke(model, "ModernUndo");
+            Assert(((List<ObservationPoint>)Field(model, "_points")).Count == imported
+                && ((List<ObservationPoint>)Field(model, "_points")).All(point => !point.Point.HasValue), "Modern merge undo failed.");
+            Console.WriteLine("PERF modern NIED import + merge + undo: " + watch.ElapsedMilliseconds + "ms; nativeRows=0");
+        }
+    }
+
+    private static void VisibleWindowResponsiveness()
+    {
+        Application.EnableVisualStyles();
+        using (var form = new ModernEditorForm(true))
+        using (var watchdog = new Timer { Interval = 60000 })
+        {
+            Exception failure = null;
+            var completed = false;
+            watchdog.Tick += (sender, args) => { failure = new TimeoutException("Modern UI did not finish within 60 seconds."); form.Close(); };
+            form.Shown += async (sender, args) =>
+            {
+                try
+                {
+                    watchdog.Start();
+                    await form.Ready.Task;
+                    typeof(ModernEditorForm).GetMethod("LoadForTest", PrivateInstance).Invoke(form, new object[] { samplePath });
+                    var browser = (Microsoft.Web.WebView2.WinForms.WebView2)typeof(ModernEditorForm)
+                        .GetField("_browser", PrivateInstance).GetValue(form);
+                    for (var attempt = 0; attempt < 100; attempt++)
+                    {
+                        if (await browser.ExecuteScriptAsync("window.editorTest.state.count === 1749") == "true") break;
+                        await System.Threading.Tasks.Task.Delay(50);
+                    }
+                    var serializer = new JavaScriptSerializer();
+                    var evaluation = await browser.CoreWebView2.CallDevToolsProtocolMethodAsync("Runtime.evaluate",
+                        serializer.Serialize(new { expression = "window.editorTest.benchmark(100)", awaitPromise = true, returnByValue = true }));
+                    var result = Object(serializer.DeserializeObject(evaluation));
+                    Assert(!result.ContainsKey("exceptionDetails"), "Browser runtime workload threw: " + evaluation);
+                    var metrics = Object(Object(result["result"])["value"]);
+                    Console.WriteLine("PERF modern visible window: " + serializer.Serialize(metrics));
+                    Assert(Convert.ToInt32(metrics["count"]) == 1749, "The browser did not load the full dataset.");
+                    Assert(Convert.ToInt32(metrics["renderedRows"]) < 80, "The UI created every station row instead of virtualizing.");
+                    Assert(Convert.ToInt32(metrics["colors"]) > 4, "The monitor canvas is blank.");
+                    Assert(Convert.ToDouble(metrics["maximum"]) < 200, "Visible interactions exceed the 200ms response budget.");
+
+                    var bridgeResult = await browser.CoreWebView2.CallDevToolsProtocolMethodAsync("Runtime.evaluate",
+                        serializer.Serialize(new { expression = "(async()=>{await window.editorTest.command('edit',{code:'ABSH01',x:100,y:100});return window.editorTest.state;})()",
+                            awaitPromise = true, returnByValue = true }));
+                    Assert(!Object(serializer.DeserializeObject(bridgeResult)).ContainsKey("exceptionDetails"), "Edit bridge failed.");
+                    var model = (MainForm)typeof(ModernEditorForm).GetField("_model", PrivateInstance).GetValue(form);
+                    Assert(((List<ObservationPoint>)Field(model, "_points"))[0].Point == new Point2(100, 100), "Browser edit did not update the model.");
+                    await browser.CoreWebView2.CallDevToolsProtocolMethodAsync("Runtime.evaluate",
+                        serializer.Serialize(new { expression = "window.editorTest.command('undo')", awaitPromise = true, returnByValue = true }));
+                    var output = Path.Combine(tempDir, "modern-ui-undo.json");
+                    typeof(MainForm).GetMethod("ModernSave", PrivateInstance).Invoke(model, new object[] { output });
+                    Assert(Equivalent(JsonRows(output), JsonRows(samplePath)), "Modern UI edit/undo changed JSON metadata.");
+                    await browser.ExecuteScriptAsync("window.editorTest.select('ABSH01'); window.editorTest.setZoom(3);");
+                    await System.Threading.Tasks.Task.Delay(200);
+                    using (var image = File.Create(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "modern-editor.png")))
+                        await browser.CoreWebView2.CapturePreviewAsync(Microsoft.Web.WebView2.Core.CoreWebView2CapturePreviewImageFormat.Png, image);
+                    completed = true;
+                }
+                catch (Exception ex) { failure = ex; }
+                finally
+                {
+                    watchdog.Stop();
+                    if (!form.IsDisposed) form.Close();
+                }
+            };
+            Application.Run(form);
+            if (failure != null) throw failure;
+            Assert(completed, "The modern UI scenario did not complete.");
         }
     }
 

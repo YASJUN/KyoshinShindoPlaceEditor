@@ -1,0 +1,212 @@
+using KyoshinMonitorLib;
+using Microsoft.Web.WebView2.Core;
+using Microsoft.Web.WebView2.WinForms;
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Web.Script.Serialization;
+using System.Windows.Forms;
+
+namespace KyoshinShindoPlaceEditor
+{
+	public sealed partial class ModernEditorForm : Form
+	{
+		private readonly MainForm _model = new MainForm();
+		private readonly WebView2 _browser = new WebView2 { Dock = DockStyle.Fill };
+		private readonly JavaScriptSerializer _json = new JavaScriptSerializer { MaxJsonLength = 16 * 1024 * 1024 };
+		private readonly SemaphoreSlim _commands = new SemaphoreSlim(1, 1);
+		private bool _dirty;
+		private bool _testMode;
+		private const string PointFilter = "点位文件|*.json;*.mpk;*.mpk.lz4;*.csv";
+		public TaskCompletionSource<bool> Ready { get; } = new TaskCompletionSource<bool>();
+
+		public ModernEditorForm(bool testMode = false)
+		{
+			_testMode = testMode;
+			Text = "强震监测点位编辑器 · WebView2 + Canvas";
+			ClientSize = new System.Drawing.Size(1280, 860);
+			MinimumSize = new System.Drawing.Size(900, 650);
+			Icon = _model.Icon;
+			_model.InitializeModernModel();
+			Controls.Add(_browser);
+			Shown += async (sender, args) => await InitializeBrowserAsync();
+			FormClosing += (sender, args) =>
+			{
+				if (!_testMode && !ConfirmDiscard()) args.Cancel = true;
+			};
+		}
+
+		private bool ConfirmDiscard()
+			=> !_dirty || MessageBox.Show(this, "有尚未保存的修改，确定放弃这些修改吗？", "未保存的修改",
+				MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes;
+
+		private async Task InitializeBrowserAsync()
+		{
+			try
+			{
+				var profile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+					"KyoshinShindoPlaceEditor", _testMode ? "WebView2-Tests" : "WebView2");
+				var environment = await CoreWebView2Environment.CreateAsync(null, profile);
+				await _browser.EnsureCoreWebView2Async(environment);
+				var core = _browser.CoreWebView2;
+				core.SetVirtualHostNameToFolderMapping("editor.local", Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Modern"),
+					CoreWebView2HostResourceAccessKind.DenyCors);
+				core.NavigationStarting += (sender, args) =>
+				{
+					Uri uri;
+					if (!Uri.TryCreate(args.Uri, UriKind.Absolute, out uri) || uri.Scheme != "https" || uri.Host != "editor.local")
+						args.Cancel = true;
+				};
+				core.NewWindowRequested += (sender, args) => args.Handled = true;
+				core.PermissionRequested += (sender, args) => args.State = CoreWebView2PermissionState.Deny;
+				core.WebMessageReceived += ReceiveCommand;
+				core.Navigate("https://editor.local/index.html");
+			}
+			catch (Exception ex)
+			{
+				Ready.TrySetException(ex);
+				if (!_testMode)
+					MessageBox.Show(this, "现代界面初始化失败。\n" + ex.GetBaseException().Message
+						+ "\n\n需要 Microsoft Edge WebView2 Runtime。可用 --legacy 参数启动经典界面。",
+						"启动失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+			}
+		}
+
+		private void Post(object message)
+		{
+			if (!IsDisposed && _browser.CoreWebView2 != null)
+				_browser.CoreWebView2.PostWebMessageAsJson(_json.Serialize(message));
+		}
+
+		private async void ReceiveCommand(object sender, CoreWebView2WebMessageReceivedEventArgs args)
+		{
+			if (!args.Source.StartsWith("https://editor.local/", StringComparison.Ordinal)) return;
+			Dictionary<string, object> command;
+			int id = 0;
+			try
+			{
+				var raw = args.WebMessageAsJson;
+				if (raw.Length > 8192) throw new InvalidDataException("请求过长。");
+				command = _json.Deserialize<Dictionary<string, object>>(raw);
+				id = Convert.ToInt32(command["id"]);
+			}
+			catch { return; }
+			await _commands.WaitAsync();
+			try
+			{
+				var action = (string)command["action"];
+				var changedCode = action == "undo" ? _model.ModernUndoPointCode()
+					: action == "edit" || action == "clear" || action == "suspend" ? (string)command["code"] : null;
+				var notice = await ExecuteCommandAsync(action, command);
+				Post(new { id, state = _model.ModernState(changedCode), dirty = _dirty, notice, testing = _testMode });
+				if (action == "ready")
+				{
+					PostInitialImages();
+					Ready.TrySetResult(true);
+					if (!_testMode) _ = RefreshMonitorAsync("surface");
+				}
+			}
+			catch (Exception ex)
+			{
+				Post(new { id, error = ex.GetBaseException().Message });
+			}
+			finally { _commands.Release(); }
+		}
+
+		private async Task<string> ExecuteCommandAsync(string action, Dictionary<string, object> command)
+		{
+			if (action == "ready")
+			{
+				var automatic = Properties.Settings.Default.AutoLoadFilePath;
+				if (!_testMode && File.Exists(automatic))
+				{
+					_model.ModernLoad(automatic);
+					_currentSavePath = automatic;
+				}
+				return null;
+			}
+			if (action == "open" || action == "merge")
+			{
+				if (action == "open" && !ConfirmDiscard()) return null;
+				using (var dialog = new OpenFileDialog { Title = action == "open" ? "打开点位文件" : "合并站点文件（保留当前信息）",
+					Filter = PointFilter, RestoreDirectory = true })
+				{
+					if (dialog.ShowDialog(this) != DialogResult.OK) return null;
+					var result = action == "open" ? _model.ModernLoad(dialog.FileName) : _model.ModernMerge(dialog.FileName);
+					if (action == "open") _currentSavePath = dialog.FileName;
+					_dirty = action == "merge";
+					return result ?? "已打开 " + Path.GetFileName(dialog.FileName);
+				}
+			}
+			if (action == "importNied")
+			{
+				using (var dialog = new OpenFileDialog { Title = "选择 NIED K-NET / KiK-net 原始 CSV（可多选）",
+					Filter = "NIED CSV|*.csv", Multiselect = true, RestoreDirectory = true,
+					InitialDirectory = AppDomain.CurrentDomain.BaseDirectory })
+				{
+					if (dialog.ShowDialog(this) != DialogResult.OK) return null;
+					var result = _model.ModernImportNied(dialog.FileNames);
+					_dirty = true;
+					return result;
+				}
+			}
+			if (action == "save" || action == "saveAs")
+			{
+				var path = _currentSavePath;
+				if (action == "saveAs" || string.IsNullOrEmpty(path))
+					using (var dialog = new SaveFileDialog { Title = "保存点位文件", FileName = path ?? "intensity-points.json",
+						Filter = "JSON|*.json|MessagePack|*.mpk|LZ4 MessagePack|*.mpk.lz4|编辑器 CSV|*.csv",
+						RestoreDirectory = true, OverwritePrompt = true })
+					{
+						if (dialog.ShowDialog(this) != DialogResult.OK) return null;
+						path = dialog.FileName;
+					}
+				_model.ModernSave(path);
+				_currentSavePath = path;
+				_dirty = false;
+				return "已保存 " + Path.GetFileName(path);
+			}
+			if (action == "edit")
+				_model.ModernEdit((string)command["code"], Integer(command, "x"), Integer(command, "y"));
+			else if (action == "clear") _model.ModernEdit((string)command["code"], null, null);
+			else if (action == "suspend") _model.ModernSuspend((string)command["code"]);
+			else if (action == "undo") _model.ModernUndo();
+			else if (action == "sort") _model.ModernSort();
+			else if (action == "refresh") { await RefreshMonitorAsync((string)command["source"]); return null; }
+			else if (action == "download") { await DownloadNiedAsync((string)command["network"]); return null; }
+			else if (action == "official") { Process.Start(new ProcessStartInfo(NiedCsvFile.StationListUrl) { UseShellExecute = true }); return null; }
+			else throw new InvalidDataException("不支持的操作。");
+			_dirty = true;
+			return null;
+		}
+
+		private string _currentSavePath;
+
+		private static int Integer(Dictionary<string, object> command, string name)
+		{
+			object value;
+			if (!command.TryGetValue(name, out value) || !(value is int))
+				throw new InvalidDataException("图像坐标必须是整数。");
+			return (int)value;
+		}
+
+		internal void LoadForTest(string path)
+		{
+			_model.ModernLoad(path);
+			Post(new { type = "state", state = _model.ModernState(), dirty = false });
+		}
+
+		protected override void Dispose(bool disposing)
+		{
+			if (disposing)
+			{
+				_browser.Dispose();
+				_model.Dispose();
+			}
+			base.Dispose(disposing);
+		}
+	}
+}

@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'">
+  <title>强震监测点位编辑器</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="appbar">
+    <strong>强震监测点位编辑器</strong><span class="edition">WebView2 + Canvas</span>
+    <span id="filename">未打开文件</span><span id="dirty" aria-label="未保存"></span>
+  </header>
+  <nav class="commands" aria-label="文件和编辑">
+    <button data-action="open">打开</button>
+    <button data-action="save" id="save" disabled>保存</button>
+    <button data-action="saveAs" id="saveAs" disabled>另存为</button>
+    <span class="separator"></span>
+    <button data-action="merge">合并坐标文件</button>
+    <button data-action="importNied">导入 NIED CSV</button>
+    <details id="download-menu">
+      <summary>NIED 下载</summary>
+      <div class="menu">
+        <button data-action="download" data-network="knet">K-NET 原始 CSV</button>
+        <button data-action="download" data-network="kiknet">KiK-net 原始 CSV</button>
+        <button data-action="official">NIED 官方页面</button>
+      </div>
+    </details>
+    <span class="separator"></span>
+    <button data-action="undo" id="undo" disabled>撤销</button>
+    <button data-action="sort">按代码排序</button>
+    <span id="busy" role="status"></span>
+  </nav>
+  <main>
+    <section class="maps" aria-label="站点地图">
+      <section class="map-panel">
+        <div class="mapbar">
+          <strong>图像坐标</strong>
+          <select id="source" aria-label="监测图像来源"><option value="surface">地表震度</option><option value="borehole">地下震度</option></select>
+          <button id="refresh">刷新图像</button>
+          <div class="zoom" aria-label="图像倍率">
+            <button id="zoom-out" title="缩小" aria-label="缩小">−</button><output id="zoom-value">1×</output><button id="zoom-in" title="放大" aria-label="放大">+</button>
+          </div>
+        </div>
+        <div class="canvas-wrap"><canvas id="monitor" tabindex="0" aria-label="监测图像，左键设置坐标，中键选点，右键拖动"></canvas><span id="image-status">正在准备底图</span></div>
+        <div class="map-options">
+          <label><input type="checkbox" id="show-base" checked>底图</label>
+          <label><input type="checkbox" id="show-points" checked>站点</label>
+          <label><input type="checkbox" id="sync" checked>选点联动定位</label>
+          <button id="locate">定位当前站点</button>
+        </div>
+      </section>
+      <section class="map-panel">
+        <div class="mapbar"><strong>地理位置</strong><span class="legend"><i class="marked"></i>已标注 <i class="unmarked"></i>未标注 <i class="suspended"></i>停用</span></div>
+        <div class="canvas-wrap"><canvas id="geographic" tabindex="0" aria-label="OSM 站点地图，点击选择站点，右键拖动"></canvas><span class="attribution">© OpenStreetMap contributors</span></div>
+      </section>
+    </section>
+    <section class="stations" aria-label="观测站点">
+      <div class="tablebar"><strong>观测站点</strong><span id="counts">0 个站点</span><input id="search" type="search" placeholder="搜索代码、名称或地区" aria-label="搜索站点"></div>
+      <div class="table-scroll" id="table-scroll" tabindex="0" role="grid" aria-label="站点列表" aria-rowcount="0">
+        <div class="table-head row" role="row"><span>站点代码</span><span>网络</span><span>停用</span><span>名称</span><span>地区</span><span>经纬度</span><span>图像坐标</span></div>
+        <div id="virtual-space"><div id="visible-rows"></div></div>
+        <div id="empty">尚未载入点位文件</div>
+      </div>
+      <div class="selection-actions"><button data-action="clear" id="clear" disabled>清除图像坐标</button><button data-action="suspend" id="suspend" disabled>切换停用状态</button></div>
+    </section>
+  </main>
+  <footer><span id="selection">未选择观测点</span><span id="conflicts"></span></footer>
+  <div id="notice" role="status" hidden><span></span><button id="dismiss" title="关闭提示" aria-label="关闭提示">×</button></div>
+  <div id="context-menu" class="menu" hidden><button data-action="clear">清除图像坐标</button><button data-action="suspend">切换停用状态</button></div>
+  <script src="app.js"></script>
+</body>
+</html>

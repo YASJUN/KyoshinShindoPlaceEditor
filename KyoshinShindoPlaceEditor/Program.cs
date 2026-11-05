@@ -9,11 +9,14 @@ namespace KyoshinShindoPlaceEditor
 		/// アプリケーションのメイン エントリ ポイントです。
 		/// </summary>
 		[STAThread]
-		private static void Main()
+		private static void Main(string[] args)
 		{
 			Application.EnableVisualStyles();
 			Application.SetCompatibleTextRenderingDefault(false);
-			Application.Run(new MainForm());
+			if (Array.IndexOf(args, "--legacy") >= 0)
+				Application.Run(new MainForm());
+			else
+				Application.Run(new ModernEditorForm());
 		}
 	}
 }

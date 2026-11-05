@@ -16,6 +16,14 @@ if (!(Test-Path -LiteralPath (Join-Path $frameworkRoot '.NETFramework\v4.7\mscor
     Expand-Archive -LiteralPath $archive -DestinationPath $packageDir -Force
 }
 
+$webViewPackage = Join-Path $PSScriptRoot 'packages\Microsoft.Web.WebView2.1.0.4314.35'
+if (!(Test-Path -LiteralPath (Join-Path $webViewPackage 'build\Microsoft.Web.WebView2.targets'))) {
+    New-Item -ItemType Directory -Path $webViewPackage -Force | Out-Null
+    $webViewArchive = Join-Path $webViewPackage 'sdk.zip'
+    Invoke-WebRequest -Uri 'https://api.nuget.org/v3-flatcontainer/microsoft.web.webview2/1.0.4314.35/microsoft.web.webview2.1.0.4314.35.nupkg' -OutFile $webViewArchive -TimeoutSec 60
+    Expand-Archive -LiteralPath $webViewArchive -DestinationPath $webViewPackage -Force
+}
+
 & $msbuild (Join-Path $PSScriptRoot 'KyoshinShindoPlaceEditor\KyoshinShindoPlaceEditor.csproj') `
     /t:Rebuild /p:Configuration=Release /p:BuildProjectReferences=false `
     "/p:TargetFrameworkRootPath=$frameworkRoot" `

@@ -13,6 +13,7 @@ namespace KyoshinShindoPlaceEditor
 		private ToolStripStatusLabel _selectionStatus;
 		private bool _selectionBlinkVisible = true;
 		private int _selectionConflictCount;
+		private ObservationPoint _highlightedPoint;
 
 		private void InitializeSelectionHighlight()
 		{
@@ -34,6 +35,7 @@ namespace KyoshinShindoPlaceEditor
 		private void RefreshSelectionHighlight()
 		{
 			var selected = SelectedPoint();
+			_highlightedPoint = selected;
 			_selectionBlinkVisible = true;
 			_selectionConflictCount = 0;
 			if (selected?.Point == null)
@@ -59,7 +61,7 @@ namespace KyoshinShindoPlaceEditor
 
 		private Rectangle SelectionSafetyBounds()
 		{
-			var point = SelectedPoint()?.Point;
+			var point = _highlightedPoint?.Point;
 			if (!point.HasValue)
 				return Rectangle.Empty;
 			var zoom = (int)MonitorZoom;
@@ -74,7 +76,7 @@ namespace KyoshinShindoPlaceEditor
 
 		private void DrawSelectedPointHighlight(object sender, PaintEventArgs args)
 		{
-			var pixel = SelectedPoint()?.Point;
+			var pixel = _highlightedPoint?.Point;
 			if (!pixel.HasValue)
 				return;
 			var state = args.Graphics.Save();

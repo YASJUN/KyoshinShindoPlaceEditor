@@ -104,17 +104,16 @@ namespace KyoshinShindoPlaceEditor
 
 		private void SelectStation(ObservationPoint point)
 		{
-			var item = listView1.Items.Cast<ListViewItem>().FirstOrDefault(value => ReferenceEquals(value.Tag, point));
-			if (item == null)
+			int index;
+			if (!_pointRowIndexes.TryGetValue(point, out index))
 				return;
 			_updatingList = true;
 			try
 			{
-				foreach (var selected in listView1.SelectedItems.Cast<ListViewItem>().ToArray())
-					selected.Selected = false;
-				item.Selected = true;
-				item.Focused = true;
-				item.EnsureVisible();
+				listView1.SelectedIndices.Clear();
+				listView1.SelectedIndices.Add(index);
+				listView1.Items[index].Focused = true;
+				listView1.EnsureVisible(index);
 			}
 			finally { _updatingList = false; }
 			listView1.Focus();

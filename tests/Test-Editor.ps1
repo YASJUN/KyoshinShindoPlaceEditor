@@ -1,7 +1,8 @@
 param(
     [string]$SamplePath = 'D:\Document\github\kyoshin-monitor-observation-points\intensity-points.json',
     [string]$ReleaseDir = 'D:\KyoshinShindoPlaceEditor.0.0.6.0',
-    [switch]$Network
+    [switch]$Network,
+    [switch]$VisibleOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -12,13 +13,21 @@ New-Item -ItemType Directory -Path $bin -Force | Out-Null
 Get-ChildItem -LiteralPath $ReleaseDir -Filter '*.dll' | Copy-Item -Destination $bin
 $editor = Join-Path $PSScriptRoot '..\KyoshinShindoPlaceEditor\bin\Release\KyoshinShindoPlaceEditor.exe'
 Copy-Item -LiteralPath $editor -Destination $bin -Force
+$buildDir = Split-Path $editor
+Get-ChildItem -LiteralPath $buildDir -Filter 'Microsoft.Web.WebView2.*.dll' | Copy-Item -Destination $bin -Force
+foreach ($folder in @('Modern', 'runtimes', 'x86', 'x64', 'arm64')) {
+    $sourceFolder = Join-Path $buildDir $folder
+    if (Test-Path -LiteralPath $sourceFolder) { Copy-Item -LiteralPath $sourceFolder -Destination $bin -Recurse -Force }
+}
 Copy-Item -LiteralPath (Join-Path $ReleaseDir 'KyoshinShindoPlaceEditor.exe.config') -Destination $bin -Force
 $testExe = Join-Path $bin 'EditorRegressionTests.exe'
 & $compiler /nologo /target:exe "/out:$testExe" `
     "/reference:$(Join-Path $bin 'KyoshinShindoPlaceEditor.exe')" `
     "/reference:$(Join-Path $bin 'KyoshinMonitorLib.dll')" `
     /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Web.Extensions.dll `
+    "/reference:$bin\Microsoft.Web.WebView2.Core.dll" "/reference:$bin\Microsoft.Web.WebView2.WinForms.dll" `
     (Join-Path $PSScriptRoot 'EditorRegressionTests.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Regression tests did not compile.' }
-if ($Network) { & $testExe $SamplePath --network } else { & $testExe $SamplePath }
+if ($VisibleOnly) { & $testExe $SamplePath --visible }
+elseif ($Network) { & $testExe $SamplePath --network } else { & $testExe $SamplePath }
 if ($LASTEXITCODE -ne 0) { throw 'Editor regression tests failed.' }

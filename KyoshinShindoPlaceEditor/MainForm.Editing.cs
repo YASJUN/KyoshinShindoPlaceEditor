@@ -34,11 +34,13 @@ namespace KyoshinShindoPlaceEditor
 		}
 
 		private string SelectedPointCode()
-			=> listView1.SelectedItems.Count == 0 ? null : listView1.SelectedItems[0].Text;
+			=> SelectedPoint()?.Code;
 
 		private ObservationPoint SelectedPoint()
 		{
-			return listView1.SelectedItems.Count == 0 ? null : listView1.SelectedItems[0].Tag as ObservationPoint;
+			if (_headless) return _modernSelection;
+			var index = listView1.SelectedIndices.Count == 0 ? -1 : listView1.SelectedIndices[0];
+			return _points != null && index >= 0 && index < _points.Count ? _points[index] : null;
 		}
 
 		private void RecordUndo(string label, Action restore, ObservationPoint changedPoint = null)
@@ -68,16 +70,19 @@ namespace KyoshinShindoPlaceEditor
 				UpdatePointValue(step.ChangedPoint);
 			if (step.SelectionCode != null)
 			{
-				var item = listView1.Items.Cast<ListViewItem>().FirstOrDefault(value => value.Text == step.SelectionCode);
-				if (item != null)
+				var index = _points.FindIndex(point => point.Code == step.SelectionCode);
+				if (index >= 0)
 				{
-					if (!item.Selected)
+					if (_headless) _modernSelection = _points[index];
+					else
 					{
-						foreach (var selected in listView1.SelectedItems.Cast<ListViewItem>().ToArray())
-							selected.Selected = false;
-						item.Selected = true;
+						if (!listView1.SelectedIndices.Contains(index))
+						{
+							listView1.SelectedIndices.Clear();
+							listView1.SelectedIndices.Add(index);
+						}
+						listView1.EnsureVisible(index);
 					}
-					item.EnsureVisible();
 				}
 			}
 			UpdateUndoMenu();

@@ -430,12 +430,24 @@ internal static class EditorRegressionTests
     {
         using (var form = new MainForm())
         {
-            var incoming = Points(ReadDocument(samplePath));
-            foreach (var point in incoming) point.Point = null;
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            var actualDir = @"D:\KyoshinShindoPlaceEditor.0.0.6.0\NIED-original-20261105";
+            List<ObservationPoint> incoming;
+            if (Directory.Exists(actualDir))
+            {
+                incoming = (List<ObservationPoint>)ReadNied(Path.Combine(actualDir, "stationlist_knet.csv"), ObservationPointType.K_NET);
+                incoming.AddRange((List<ObservationPoint>)ReadNied(Path.Combine(actualDir, "stationlist_kiknet.csv"), ObservationPointType.KiK_net));
+            }
+            else
+            {
+                incoming = Points(ReadDocument(samplePath));
+                foreach (var point in incoming) point.Point = null;
+            }
+            var parseMs = watch.ElapsedMilliseconds;
             SetField(form, "_points", new List<ObservationPoint>());
             var list = (ListView)Field(form, "listView1");
             var handle = list.Handle;
-            var watch = System.Diagnostics.Stopwatch.StartNew();
+            watch.Restart();
             Invoke(form, "ApplyNiedImport", incoming);
             var importMs = watch.ElapsedMilliseconds;
             watch.Restart();
@@ -449,7 +461,7 @@ internal static class EditorRegressionTests
             for (var i = 0; i < 5; i++)
                 Invoke(form, "SetSelectedImagePoint", new Point2(100 + i, 100));
             var editMs = watch.ElapsedMilliseconds;
-            Console.WriteLine("PERF 1749 NIED stations: import=" + importMs + "ms select=" + selectMs + "ms edits(5)=" + editMs + "ms selectionChanges=" + changes);
+            Console.WriteLine("PERF " + incoming.Count + " NIED stations: parse=" + parseMs + "ms import=" + importMs + "ms select=" + selectMs + "ms edits(5)=" + editMs + "ms selectionChanges=" + changes);
             Assert(list.SelectedItems.Count == 1 && list.SelectedItems[0].Text == incoming.Last().Code, "Editing lost selection.");
             Assert(changes == 0, "A single-coordinate edit unnecessarily resets the full list selection.");
             Assert(importMs < 5000 && selectMs < 3000 && editMs < 3000, "Large-file interaction exceeded the response budget.");
@@ -503,6 +515,26 @@ internal static class EditorRegressionTests
             catch (TargetInvocationException) { }
             Assert(((List<ObservationPoint>)Field(form, "_points")).Count == 2 && official.Point == new Point2(10, 20),
                 "Invalid merge partially changed existing data.");
+        }
+        using (var form = LoadedForm())
+        {
+            var row = Object(JsonRows(samplePath)[0]);
+            var pixel = Object(row["point"]);
+            pixel["center_point"] = new Dictionary<string, object> { ["x"] = 100, ["y"] = 100 };
+            pixel["offset"] = new Dictionary<string, object> { ["x"] = 0, ["y"] = 0 };
+            row["merge_only"] = "keep incoming metadata";
+            var path = Path.Combine(tempDir, "merge-into-modern.json");
+            File.WriteAllText(path, new JavaScriptSerializer().Serialize(new[] { row }));
+            Invoke(form, "MergePointFile", path);
+            var output = Path.Combine(tempDir, "merged-modern-save.json");
+            Invoke(form, "SaveFile", output);
+            var saved = Object(JsonRows(output)[0]);
+            Assert((string)saved["merge_only"] == "keep incoming metadata" && Equivalent(saved["point"], pixel),
+                "Merging into an existing JSON document lost incoming image metadata.");
+            Assert(Equivalent(saved["location"], Object(JsonRows(samplePath)[0])["location"]), "Merge rounded current JSON coordinates.");
+            Invoke(form, "UndoLastEdit");
+            Invoke(form, "SaveFile", output);
+            Assert(Equivalent(JsonRows(output), JsonRows(samplePath)), "Undo merge did not restore the original JSON metadata.");
         }
     }
 

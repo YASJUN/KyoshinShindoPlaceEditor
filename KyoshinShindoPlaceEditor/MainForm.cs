@@ -23,6 +23,7 @@ namespace KyoshinShindoPlaceEditor
 			InitializeSelectionHighlight();
 			InitializeNiedDownloads();
 			InitializePointMerge();
+			InitializeMapNavigation();
 		}
 
 		private List<ObservationPoint> _points;
@@ -53,6 +54,8 @@ namespace KyoshinShindoPlaceEditor
 
 				_monitorZoom = value;
 				RefreshSelectionHighlight();
+				if (_syncMapMenu.Checked)
+					CenterSelectedStation();
 			}
 		}
 
@@ -263,6 +266,7 @@ namespace KyoshinShindoPlaceEditor
 			var oldImage = interpolatedPictureBox4.Image;
 			interpolatedPictureBox4.Image = canvas;
 			oldImage?.Dispose();
+			interpolatedPictureBox1.Invalidate();
 		}
 
 		private void UpdatePointValue(ObservationPoint point)
@@ -283,26 +287,10 @@ namespace KyoshinShindoPlaceEditor
 				return;
 			RefreshSelectionHighlight();
 			var selectedPoint = SelectedPoint();
-			if (selectedPoint?.Location == null)
-				return;
-
-			System.Diagnostics.Debug.WriteLine(listView1.SelectedItems[0].Text);
-
-			if (_mapPoint != null && splitContainer2.Panel2.Controls.Contains(_mapPoint))
-			{
-				splitContainer2.Panel2.Controls.Remove(_mapPoint);
-				_mapPoint.Dispose();
-			}
-
-			_mapPoint = new Panel()
-			{
-				BackColor = Color.Red,
-				Size = new Size(3, 3), //3
-				Location = (MercatorProjection.LatLngToPixel(selectedPoint.Location, 5) - _mapLeftUpMapPosition - 1 + interpolatedPictureBox1.Location),
-			};
-
-			splitContainer2.Panel2.Controls.Add(_mapPoint);
-			splitContainer2.Panel2.Controls.SetChildIndex(_mapPoint, 0);
+			if (_syncMapMenu.Checked && selectedPoint != null)
+				CenterSelectedStation();
+			else
+				UpdateGeographicMarker(selectedPoint, false);
 		}
 
 		#region ZoomChange
@@ -328,17 +316,7 @@ namespace KyoshinShindoPlaceEditor
 
 			if (e.Button == MouseButtons.Middle && _points.Any(p => p.Point == clientpos))
 			{
-				var code = _points.First(p => p.Point == clientpos).Code;
-				System.Diagnostics.Debug.WriteLine(_points.First(p => p.Point == clientpos).Code);
-
-				var item = listView1.Items.Cast<ListViewItem>().First(i => i.Text == code);
-
-				foreach (ListViewItem i in listView1.Items)
-					i.Selected = false;
-
-				item.Selected = true;
-				listView1.Focus();
-				listView1.EnsureVisible(item.Index);
+				SelectStation(_points.First(p => p.Point == clientpos));
 				return;
 			}
 

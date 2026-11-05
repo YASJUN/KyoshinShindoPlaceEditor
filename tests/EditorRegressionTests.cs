@@ -38,6 +38,7 @@ internal static class EditorRegressionTests
             Run("Official NIED downloads are exposed inside the editor", DownloadMenu);
             Run("Large NIED edits keep selection stable without rebuilding every row", LargeNiedEdits);
             Run("Station files merge coordinates with NIED metadata and support undo", MergeStationFiles);
+            Run("Station selection centers both maps and OSM can select stations", SynchronizedMaps);
             if (args.Length > 1 && args[1] == "--network")
                 Run("Official NIED downloads return valid original CSV bytes", LiveNiedDownloads);
             Console.WriteLine("RESULT: " + (tests - failures) + " passed, " + failures + " failed");
@@ -502,6 +503,52 @@ internal static class EditorRegressionTests
             catch (TargetInvocationException) { }
             Assert(((List<ObservationPoint>)Field(form, "_points")).Count == 2 && official.Point == new Point2(10, 20),
                 "Invalid merge partially changed existing data.");
+        }
+    }
+
+    private static void SynchronizedMaps()
+    {
+        using (var form = LoadedForm())
+        {
+            Assert(typeof(MainForm).GetMethod("CenterSelectedStation", PrivateInstance) != null, "Map synchronization is missing.");
+            var list = (ListView)Field(form, "listView1");
+            var points = (List<ObservationPoint>)Field(form, "_points");
+            var split = (SplitContainer)Field(form, "splitContainer2");
+            var image = (PictureBox)Field(form, "interpolatedPictureBox3");
+            var map = (PictureBox)Field(form, "interpolatedPictureBox1");
+            var sync = (ToolStripMenuItem)Field(form, "_syncMapMenu");
+            Assert(sync.Checked, "Synchronized navigation is not enabled by default.");
+            Invoke(form, "KyoshinZoomChange_3", null, EventArgs.Empty);
+            Invoke(form, "CenterSelectedStation");
+            var first = points[0];
+            Assert(Math.Abs(image.Left + first.Point.Value.X * 3 + 1 - split.Panel1.ClientSize.Width / 2) <= 1,
+                "Selected image point is not centered at the current zoom.");
+            var marker = (Panel)Field(form, "_mapPoint");
+            Assert(marker.Parent == split.Panel2 && Math.Abs(marker.Left + marker.Width / 2 - split.Panel2.ClientSize.Width / 2) <= 1,
+                "Geographic marker is not centered.");
+            var other = points[1];
+            var origin = (Point2)Field(form, "_mapLeftUpMapPosition");
+            var pixel = MercatorProjection.LatLngToPixel(other.Location, 5) - origin;
+            Invoke(form, "GeographicMapMouseClick", null, new MouseEventArgs(MouseButtons.Left, 1, pixel.X, pixel.Y, 0));
+            Assert(list.SelectedItems.Count == 1 && list.SelectedItems[0].Text == other.Code,
+                "Clicking the OSM station did not select its image station.");
+            sync.Checked = false;
+            var previous = image.Location;
+            list.Items[2].Selected = true;
+            Invoke(form, "ListViewSelectedIndexChanged", list, EventArgs.Empty);
+            Assert(image.Location == previous, "Disabling synchronization still moved the image.");
+            points[2].Point = null;
+            Invoke(form, "CenterSelectedStation");
+            Assert(((ToolStripStatusLabel)Field(form, "_selectionStatus")).Text.Contains("未设置"),
+                "A NIED-only station does not explain its missing image coordinates.");
+            using (var bitmap = new System.Drawing.Bitmap(1024, 1024))
+            using (var graphics = System.Drawing.Graphics.FromImage(bitmap))
+            {
+                graphics.Clear(System.Drawing.Color.White);
+                Invoke(form, "DrawGeographicStations", null, new PaintEventArgs(graphics, new System.Drawing.Rectangle(0, 0, 1024, 1024)));
+                Assert(bitmap.GetPixel(pixel.X, pixel.Y).ToArgb() != System.Drawing.Color.White.ToArgb(),
+                    "OSM station markers are not painted.");
+            }
         }
     }
 }

@@ -14,6 +14,7 @@ namespace KyoshinShindoPlaceEditor
 			public string Label;
 			public string SelectionCode;
 			public Action Restore;
+			public ObservationPoint ChangedPoint;
 		}
 
 		private readonly List<UndoStep> _undoHistory = new List<UndoStep>();
@@ -37,13 +38,12 @@ namespace KyoshinShindoPlaceEditor
 
 		private ObservationPoint SelectedPoint()
 		{
-			var code = SelectedPointCode();
-			return _points?.FirstOrDefault(point => point.Code == code);
+			return listView1.SelectedItems.Count == 0 ? null : listView1.SelectedItems[0].Tag as ObservationPoint;
 		}
 
-		private void RecordUndo(string label, Action restore)
+		private void RecordUndo(string label, Action restore, ObservationPoint changedPoint = null)
 		{
-			_undoHistory.Add(new UndoStep { Label = label, Restore = restore, SelectionCode = SelectedPointCode() });
+			_undoHistory.Add(new UndoStep { Label = label, Restore = restore, SelectionCode = SelectedPointCode(), ChangedPoint = changedPoint });
 			if (_undoHistory.Count > 50)
 				_undoHistory.RemoveAt(0);
 			UpdateUndoMenu();
@@ -62,15 +62,21 @@ namespace KyoshinShindoPlaceEditor
 			var step = _undoHistory.Last();
 			step.Restore();
 			_undoHistory.RemoveAt(_undoHistory.Count - 1);
-			UpdateListValue();
+			if (step.ChangedPoint == null)
+				UpdateListValue();
+			else
+				UpdatePointValue(step.ChangedPoint);
 			if (step.SelectionCode != null)
 			{
 				var item = listView1.Items.Cast<ListViewItem>().FirstOrDefault(value => value.Text == step.SelectionCode);
 				if (item != null)
 				{
-					foreach (ListViewItem selected in listView1.SelectedItems)
-						selected.Selected = false;
-					item.Selected = true;
+					if (!item.Selected)
+					{
+						foreach (var selected in listView1.SelectedItems.Cast<ListViewItem>().ToArray())
+							selected.Selected = false;
+						item.Selected = true;
+					}
 					item.EnsureVisible();
 				}
 			}
@@ -83,9 +89,9 @@ namespace KyoshinShindoPlaceEditor
 			if (point == null || point.Point == value)
 				return;
 			var previous = point.Point;
-			RecordUndo(value.HasValue ? "移动点位" : "清除图像坐标", () => point.Point = previous);
+			RecordUndo(value.HasValue ? "移动点位" : "清除图像坐标", () => point.Point = previous, point);
 			point.Point = value;
-			UpdateListValue();
+			UpdatePointValue(point);
 		}
 
 		private void SortPoints()

@@ -26,6 +26,7 @@ namespace KyoshinShindoPlaceEditor
 
 		private List<ObservationPoint> _points;
 		private ObservationPointJsonDocument _jsonDocument;
+		private bool _updatingList;
 		private Point2 _mapLeftUpMapPosition = new Point2(13 * 2 * MercatorProjection.TileSize, 5 * 2 * MercatorProjection.TileSize);
 
 		private Point _prevPos;
@@ -206,6 +207,7 @@ namespace KyoshinShindoPlaceEditor
 			var lastSelectedCode = SelectedPointCode();
 
 			listView1.BeginUpdate();
+			_updatingList = true;
 
 			try
 			{
@@ -214,32 +216,9 @@ namespace KyoshinShindoPlaceEditor
 					p.Code, p.Type == ObservationPointType.Unknown ? "未知" : p.Type.ToNaturalString(),
 					p.IsSuspended ? "是" : "否", p.Name, p.Region,
 					p.Location?.ToString() ?? "未设置", p.Point?.ToString() ?? "未设置"
-				})).ToArray());
+				}) { Tag = p }).ToArray());
 
-				Bitmap canvas = null;
-				if (!checkBox2.Checked)
-				{
-					canvas = new Bitmap(352, 400);
-					try
-					{
-						foreach (var point in _points.Where(p => p.Point.HasValue && ObservationPointJsonDocument.IsInsideImage(p.Point.Value)))
-						{
-							Color color = point.Type == ObservationPointType.KiK_net ? Color.Red
-								: point.Type == ObservationPointType.K_NET ? Color.Orange : Color.Black;
-							if (point.IsSuspended)
-								color = Color.Gray;
-							canvas.SetPixel(point.Point.Value.X, point.Point.Value.Y, color);
-						}
-					}
-					catch
-					{
-						canvas.Dispose();
-						throw;
-					}
-				}
-				var oldImage = interpolatedPictureBox4.Image;
-				interpolatedPictureBox4.Image = canvas;
-				oldImage?.Dispose();
+				RedrawPointImage();
 
 				var selectedItem = listView1.Items.Cast<ListViewItem>().FirstOrDefault(item => item.Text == lastSelectedCode);
 				if (selectedItem != null)
@@ -251,19 +230,58 @@ namespace KyoshinShindoPlaceEditor
 			finally
 			{
 				listView1.EndUpdate();
+				_updatingList = false;
 				Enabled = wasEnabled;
 				Cursor = oldCursor;
 				Text = oldText;
-				RefreshSelectionHighlight();
+				ListViewSelectedIndexChanged(listView1, EventArgs.Empty);
 			}
+		}
+
+		private void RedrawPointImage()
+		{
+			Bitmap canvas = null;
+			if (!checkBox2.Checked)
+			{
+				canvas = new Bitmap(352, 400);
+				try
+				{
+					foreach (var point in _points.Where(p => p.Point.HasValue && ObservationPointJsonDocument.IsInsideImage(p.Point.Value)))
+					{
+						var color = point.IsSuspended ? Color.Gray : point.Type == ObservationPointType.KiK_net ? Color.Red
+							: point.Type == ObservationPointType.K_NET ? Color.Orange : Color.Black;
+						canvas.SetPixel(point.Point.Value.X, point.Point.Value.Y, color);
+					}
+				}
+				catch
+				{
+					canvas.Dispose();
+					throw;
+				}
+			}
+			var oldImage = interpolatedPictureBox4.Image;
+			interpolatedPictureBox4.Image = canvas;
+			oldImage?.Dispose();
+		}
+
+		private void UpdatePointValue(ObservationPoint point)
+		{
+			var item = listView1.Items.Cast<ListViewItem>().FirstOrDefault(value => ReferenceEquals(value.Tag, point));
+			if (item != null)
+			{
+				item.SubItems[2].Text = point.IsSuspended ? "是" : "否";
+				item.SubItems[6].Text = point.Point?.ToString() ?? "未设置";
+			}
+			RedrawPointImage();
+			RefreshSelectionHighlight();
 		}
 
 		private void ListViewSelectedIndexChanged(object sender, EventArgs e)
 		{
-			RefreshSelectionHighlight();
-			if (listView1.SelectedItems.Count == 0)
+			if (_updatingList)
 				return;
-			var selectedPoint = _points.FirstOrDefault(p => p.Code == listView1.SelectedItems[0].Text);
+			RefreshSelectionHighlight();
+			var selectedPoint = SelectedPoint();
 			if (selectedPoint?.Location == null)
 				return;
 
@@ -579,9 +597,9 @@ namespace KyoshinShindoPlaceEditor
 			if (point == null)
 				return;
 			var previous = point.IsSuspended;
-			RecordUndo("切换停用状态", () => point.IsSuspended = previous);
+			RecordUndo("切换停用状态", () => point.IsSuspended = previous, point);
 			point.IsSuspended = !previous;
-			UpdateListValue();
+			UpdatePointValue(point);
 		}
 
 		private void RemovePointToolStripMenuItem_Click(object sender, EventArgs e)

@@ -36,6 +36,7 @@ internal static class EditorRegressionTests
             Run("NIED import can be undone and failed imports preserve data", UndoNiedImport);
             Run("Selection highlight blinks and safety square never blocks editing", SelectionHighlight);
             Run("Official NIED downloads are exposed inside the editor", DownloadMenu);
+            Run("Large NIED edits keep selection stable without rebuilding every row", LargeNiedEdits);
             if (args.Length > 1 && args[1] == "--network")
                 Run("Official NIED downloads return valid original CSV bytes", LiveNiedDownloads);
             Console.WriteLine("RESULT: " + (tests - failures) + " passed, " + failures + " failed");
@@ -420,6 +421,36 @@ internal static class EditorRegressionTests
             File.WriteAllBytes(output, bytes);
             var records = (List<ObservationPoint>)ReadNied(output, type);
             Assert(records.Count == (type == ObservationPointType.K_NET ? 1047 : 702), "Official downloaded station count mismatch.");
+        }
+    }
+
+    private static void LargeNiedEdits()
+    {
+        using (var form = new MainForm())
+        {
+            var incoming = Points(ReadDocument(samplePath));
+            foreach (var point in incoming) point.Point = null;
+            SetField(form, "_points", new List<ObservationPoint>());
+            var list = (ListView)Field(form, "listView1");
+            var handle = list.Handle;
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            Invoke(form, "ApplyNiedImport", incoming);
+            var importMs = watch.ElapsedMilliseconds;
+            watch.Restart();
+            list.Items[list.Items.Count - 1].Selected = true;
+            for (var i = 0; i < 3; i++)
+                Invoke(form, "ListViewSelectedIndexChanged", list, EventArgs.Empty);
+            var selectMs = watch.ElapsedMilliseconds;
+            var changes = 0;
+            list.SelectedIndexChanged += (sender, args) => changes++;
+            watch.Restart();
+            for (var i = 0; i < 5; i++)
+                Invoke(form, "SetSelectedImagePoint", new Point2(100 + i, 100));
+            var editMs = watch.ElapsedMilliseconds;
+            Console.WriteLine("PERF 1749 NIED stations: import=" + importMs + "ms select=" + selectMs + "ms edits(5)=" + editMs + "ms selectionChanges=" + changes);
+            Assert(list.SelectedItems.Count == 1 && list.SelectedItems[0].Text == incoming.Last().Code, "Editing lost selection.");
+            Assert(changes == 0, "A single-coordinate edit unnecessarily resets the full list selection.");
+            Assert(importMs < 5000 && selectMs < 3000 && editMs < 3000, "Large-file interaction exceeded the response budget.");
         }
     }
 }

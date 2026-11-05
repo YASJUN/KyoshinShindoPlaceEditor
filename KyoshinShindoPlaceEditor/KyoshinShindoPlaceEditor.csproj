@@ -118,6 +118,7 @@
     <Content Include="Modern\index.html"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></Content>
     <Content Include="Modern\styles.css"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></Content>
     <Content Include="Modern\app.js"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></Content>
+    <Content Include="Modern\image-coordinates.js"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></Content>
     <Content Include="Modern\base-map.gif"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></Content>
     <Content Include="..\packages\Microsoft.Web.WebView2.1.0.4314.35\LICENSE.txt">
       <Link>WebView2-LICENSE.txt</Link>

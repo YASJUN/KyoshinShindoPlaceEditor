@@ -75,5 +75,9 @@ footer { min-height: 29px; flex: 0 0 auto; display: flex; flex-direction: column
 #notice.error { border-color: #c65d5d; color: #963737; }
 #dismiss { position: absolute; right: 7px; top: 7px; width: 28px; padding: 0; font-size: 18px; }
 #context-menu { position: fixed; z-index: 30; }
+#map-context-menu { position: fixed; z-index: 30; }
+#spatial-filter { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 12px; background: #f1eafa; border-bottom: 1px solid #d5c5e6; }
+#spatial-filter label { display: flex; align-items: center; gap: 5px; }
+#spatial-radius { width: 75px; }
 [hidden] { display: none !important; }
 @media (max-width: 1050px) { main { grid-template-columns: 360px minmax(0, 1fr); } .commands { gap: 4px; } .commands button { padding: 3px 7px; } #counts { display: none; } }

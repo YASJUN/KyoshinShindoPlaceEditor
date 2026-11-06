@@ -26,7 +26,7 @@
   <div class="view-tools"><span>三图同步缩放、平移 · 拖动地图 / 滚轮缩放</span><label>倍率 <select id="zoom"><option value="1">1×</option><option value="2">2×</option><option value="3">3×</option><option value="4">4×</option><option value="5">5×</option><option value="6">6×</option><option value="7">7×</option><option value="8">8×</option><option value="9">9×</option><option value="10">10×</option></select></label><button id="reset">重置视图</button><span id="pixel">原图坐标：—</span></div>
   <section class="point-details" aria-label="选中点位信息">
     <div><strong id="point-title">未选择点位</strong><p id="point-info">点击左侧已知点位查看信息；点击空白或清除选择后可传递当前视图。</p><div id="point-candidates" aria-label="附近或重叠点位"></div></div>
-    <div class="point-actions"><button id="clear-selection" disabled>清除选择</button><button id="send-main" class="primary">将当前视图传到主窗口</button></div>
+    <div class="point-actions"><button id="clear-selection" disabled>清除选择</button><button id="send-main" class="primary">将当前视图传到主窗口</button><div class="search-actions"><button id="send-search" aria-expanded="false" aria-controls="send-search-menu">传到主窗口并查找 ▾</button><div id="send-search-menu" hidden><button id="send-nearest">寻找最近未标记点位</button><button id="send-nearby">寻找附近点位</button></div></div></div>
   </section>
   <main>
     <section class="panel"><h2>01 <span>已知点位</span></h2><canvas id="known" aria-label="已知点位图"></canvas></section>

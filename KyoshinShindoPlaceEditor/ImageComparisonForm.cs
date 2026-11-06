@@ -13,7 +13,7 @@ namespace KyoshinShindoPlaceEditor
     {
         private readonly WebView2 _browser = new WebView2 { Dock = DockStyle.Fill };
         private readonly Func<object> _snapshot;
-        private readonly Func<string, string, double, double, double, Task> _navigate;
+        private readonly Func<string, string, double, double, double, string, Task> _navigate;
         private Func<string, Task<MonitorFrame>> _download = MonitorImageClient.DownloadAsync;
         private readonly JavaScriptSerializer _json = new JavaScriptSerializer { MaxJsonLength = 16 * 1024 * 1024 };
         private bool _ready;
@@ -28,7 +28,7 @@ namespace KyoshinShindoPlaceEditor
             Activate();
         }
 
-        internal ImageComparisonForm(Func<object> snapshot, Func<string, string, double, double, double, Task> navigate)
+        internal ImageComparisonForm(Func<object> snapshot, Func<string, string, double, double, double, string, Task> navigate)
         {
             _snapshot = snapshot;
             _navigate = navigate;
@@ -84,8 +84,12 @@ namespace KyoshinShindoPlaceEditor
                     if (double.IsNaN(x) || double.IsInfinity(x) || double.IsNaN(y) || double.IsInfinity(y)
                         || double.IsNaN(scale) || scale < 1 || scale > 10 || Math.Abs(x) > 100000 || Math.Abs(y) > 100000)
                         throw new InvalidDataException("视图位置无效。");
-                    await _navigate((string)command["documentId"], command["code"] as string, x, y, scale);
-                    Post(new { id, navigated = true });
+                    object requestedMode;
+                    var searchMode = command.TryGetValue("searchMode", out requestedMode) ? requestedMode as string : null;
+                    if (requestedMode != null && searchMode != "nearest" && searchMode != "nearby")
+                        throw new InvalidDataException("查找方式无效。");
+                    await _navigate((string)command["documentId"], command["code"] as string, x, y, scale, searchMode);
+                    Post(new { id, navigated = true, searchMode });
                     return;
                 }
                 if (action == "refresh") frame = await _download((string)command["source"]);

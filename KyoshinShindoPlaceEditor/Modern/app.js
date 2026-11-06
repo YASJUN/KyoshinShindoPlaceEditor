@@ -10,6 +10,8 @@
   let updatingNied = false;
   let testing = false;
   let comparisonOpen = false;
+  let spatialQuery = null, searchTarget = null, documentId = null;
+  let spatialDistances = new Map();
   const pending = new Map();
   const images = {};
   const pointLayer = Object.assign(document.createElement("canvas"), { width: 352, height: 400 });
@@ -97,8 +99,16 @@
     if (data.type === "comparisonNavigate") {
       applyState(data.state, data.dirty);
       geographicPreview = null; previewRevision++; updateGeographicPreview();
+      if (data.searchMode) {
+        setZoom(data.scale);
+        monitor.x = monitor.width / 2 - data.x * monitor.scale;
+        monitor.y = monitor.height / 2 - data.y * monitor.scale;
+        searchAt({ space: "image", x: data.x, y: data.y }, data.searchMode);
+        return;
+      }
       if (data.code && byCode.has(data.code)) {
         if (!filtered.some(point => point.code === data.code)) {
+          spatialQuery = null;
           $("search").value = ""; $("only-unmarked").checked = false; $("station-status").value = "all";
           filterRows();
         }
@@ -129,6 +139,11 @@
   }
 
   function applyState(state, dirty = false, preferServer = false) {
+    if (state.documentId && documentId !== state.documentId) {
+      spatialQuery = null;
+      documentId = state.documentId;
+      $("map-context-menu").hidden = true;
+    }
     if (state.points) {
       points = state.points;
       byCode = new Map(points.map(point => [point.code, point]));
@@ -206,6 +221,24 @@
     const source = onlyUnmarked || status !== "all" ? points.filter(point => (!onlyUnmarked || !point.pixel)
       && (status === "all" || (status === "suspended" ? point.suspended : !point.suspended))) : points;
     filtered = query ? source.filter(point => [point.code, point.name, point.region].some(value => (value || "").toLocaleLowerCase().includes(query))) : source;
+    spatialDistances = new Map();
+    if (spatialQuery) {
+      const matches = StationSearch.search(points, spatialQuery);
+      spatialDistances = new Map(matches.map(item => [item.point.code, item.distance]));
+      filtered = filtered.filter(point => spatialDistances.has(point.code))
+        .sort((a, b) => spatialDistances.get(a.code) - spatialDistances.get(b.code) || a.code.localeCompare(b.code));
+      const unit = spatialQuery.space === "image" ? "原图像素" : "公里";
+      const distance = matches[0]?.distance;
+      const location = StationSearch.mapLocation(spatialQuery.x, spatialQuery.y);
+      $("spatial-summary").textContent = (spatialQuery.space === "image"
+        ? `图像 (${spatialQuery.x.toFixed(1)}, ${spatialQuery.y.toFixed(1)})`
+        : `地图 ${location.lat.toFixed(5)}, ${location.lon.toFixed(5)}`) + " · "
+        + (spatialQuery.mode === "nearest" ? `最近未标记（未停用）：${distance == null ? "无候选" : distance.toFixed(2) + " " + unit}` : "附近点位")
+        + ` · ${filtered.length} 个结果`;
+      $("spatial-unit").textContent = unit;
+      $("spatial-radius-label").hidden = spatialQuery.mode !== "nearby";
+    }
+    $("spatial-filter").hidden = !spatialQuery;
     $("virtual-space").style.height = filtered.length * ROW_HEIGHT + "px";
     $("table-scroll").setAttribute("aria-rowcount", filtered.length);
     $("empty").hidden = filtered.length !== 0;
@@ -213,6 +246,28 @@
     if (reset) $("table-scroll").scrollTop = 0;
     renderRows();
   }
+
+  function searchAt(target, mode) {
+    spatialQuery = { ...target, mode, radius: target.space === "image" ? 10 : 30 };
+    $("search").value = "";
+    $("only-unmarked").checked = mode === "nearest";
+    $("station-status").value = mode === "nearest" ? "active" : "all";
+    $("spatial-radius").value = spatialQuery.radius;
+    filterRows(); scheduleDraw();
+    notice(mode === "nearest" ? "已筛选最近的未标记且未停用点位，等距候选全部保留。图像查找优先使用草稿，否则使用估算中心。"
+      : "已按距离筛选附近点位，可调整半径或继续使用文字、未标注和停用筛选。图像位置按正式坐标、草稿、估算中心依次取值。");
+  }
+  $("clear-spatial").onclick = () => {
+    spatialQuery = null;
+    $("search").value = ""; $("only-unmarked").checked = false; $("station-status").value = "all";
+    filterRows(); scheduleDraw();
+  };
+  $("spatial-radius").onchange = () => {
+    if (!spatialQuery) return;
+    const radius = Number($("spatial-radius").value);
+    if (!Number.isFinite(radius) || radius <= 0 || radius > 20000) { $("spatial-radius").value = spatialQuery.radius; return; }
+    spatialQuery.radius = radius; filterRows(); scheduleDraw();
+  };
 
   function renderRows() {
     rowFrame = 0;
@@ -235,6 +290,8 @@
         const cell = document.createElement("span");
         cell.textContent = value || "";
         cell.title = value || "";
+        if (spatialDistances.has(point.code)) cell.title += " · 距查找中心 " + spatialDistances.get(point.code).toFixed(2)
+          + (spatialQuery.space === "image" ? " 原图像素" : " 公里");
         cell.setAttribute("role", "gridcell");
         if (column === 0) cell.className = "code";
         if (column === 6 && !point.pixel) cell.className = point.draft ? "draft" : "missing";
@@ -407,6 +464,18 @@
       context.drawImage(geoLayer, 0, 0);
     }
     if (!upper || $("show-points").checked) drawConflictPoints(context, view, upper);
+    if (spatialQuery && spatialQuery.space === (upper ? "image" : "map")) {
+      context.save();
+      context.strokeStyle = "#7a36c4"; context.lineWidth = 2 / view.scale;
+      const { x, y } = spatialQuery, arm = 8 / view.scale;
+      context.beginPath(); context.moveTo(x - arm, y); context.lineTo(x + arm, y);
+      context.moveTo(x, y - arm); context.lineTo(x, y + arm); context.stroke();
+      if (upper && spatialQuery.mode === "nearby") {
+        context.setLineDash([4 / view.scale, 3 / view.scale]);
+        context.beginPath(); context.arc(x, y, spatialQuery.radius, 0, Math.PI * 2); context.stroke();
+      }
+      context.restore();
+    }
     const point = byCode.get(selected), pixel = upper ? imagePixel(point) || estimatedPoint : point?.geo;
     if (!upper && geographicPreview?.geo) {
       const [x, y] = geographicPreview.geo;
@@ -483,9 +552,10 @@
     view.canvas.addEventListener("contextmenu", event => event.preventDefault());
     view.canvas.addEventListener("pointerdown", event => {
       event.preventDefault();
+      $("map-context-menu").hidden = $("context-menu").hidden = true;
       view.canvas.focus();
       if (event.button === 2) {
-        drag = { x: event.clientX, y: event.clientY, startX: view.x, startY: view.y };
+        drag = { x: event.clientX, y: event.clientY, startX: view.x, startY: view.y, moved: false, pointerId: event.pointerId };
         view.canvas.setPointerCapture(event.pointerId);
         return;
       }
@@ -513,12 +583,28 @@
       }
     });
     view.canvas.addEventListener("pointermove", event => {
-      if (!drag) return;
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) > 4) drag.moved = true;
+      if (!drag.moved) return;
       view.x = drag.startX + event.clientX - drag.x; view.y = drag.startY + event.clientY - drag.y;
       scheduleDraw();
     });
-    view.canvas.addEventListener("pointerup", () => { drag = null; });
+    view.canvas.addEventListener("pointerup", event => {
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      const moved = drag.moved || Math.hypot(event.clientX - drag.x, event.clientY - drag.y) > 4;
+      if (!moved && event.button === 2) {
+        const bounds = view.canvas.getBoundingClientRect();
+        searchTarget = { space: view === monitor ? "image" : "map",
+          x: (drag.x - bounds.left - view.x) / view.scale, y: (drag.y - bounds.top - view.y) / view.scale };
+        const menu = $("map-context-menu"); menu.hidden = false;
+        menu.style.left = Math.max(0, Math.min(innerWidth - menu.offsetWidth, event.clientX)) + "px";
+        menu.style.top = Math.max(0, Math.min(innerHeight - menu.offsetHeight, event.clientY)) + "px";
+      }
+      drag = null;
+      if (view.canvas.hasPointerCapture(event.pointerId)) view.canvas.releasePointerCapture(event.pointerId);
+    });
     view.canvas.addEventListener("pointercancel", () => { drag = null; });
+    view.canvas.addEventListener("lostpointercapture", () => { drag = null; });
     view.canvas.addEventListener("wheel", event => {
       event.preventDefault();
       if (view === monitor) setZoom(view.scale + (event.deltaY < 0 ? 1 : -1));
@@ -541,6 +627,8 @@
     $("context-menu").style.top = Math.min(innerHeight - 85, event.clientY) + "px";
   });
   document.addEventListener("click", event => {
+    const searchButton = event.target.closest("[data-station-search]");
+    if (searchButton && searchTarget) searchAt(searchTarget, searchButton.dataset.stationSearch);
     const button = event.target.closest("[data-action]");
     if (button && !button.disabled) {
       const action = button.dataset.action;
@@ -549,6 +637,7 @@
       command(action, { code: selected, network: button.dataset.network }).catch(() => {});
     }
     $("context-menu").hidden = true;
+    $("map-context-menu").hidden = true;
   });
   document.addEventListener("keydown", event => {
     if (event.ctrlKey) {
@@ -562,7 +651,7 @@
         : Math.max(0, Math.min(filtered.length - 1, index + (event.key === "ArrowUp" ? -1 : 1)));
       if (filtered[next]) select(filtered[next].code);
     }
-    if (event.key === "Escape") { $("context-menu").hidden = true; $("notice").hidden = true; }
+    if (event.key === "Escape") { $("context-menu").hidden = $("map-context-menu").hidden = true; $("notice").hidden = true; }
   });
   $("search").addEventListener("input", () => filterRows());
   $("only-unmarked").addEventListener("change", () => filterRows());
@@ -592,7 +681,8 @@
 
   // Runtime tests exercise the same selection, zoom, virtualization and bridge used by the UI.
   window.editorTest = {
-    get state() { return { count: points.length, selected, renderedRows: $("visible-rows").children.length, stateVersion, pendingCount }; },
+    get state() { return { count: points.length, selected, renderedRows: $("visible-rows").children.length, stateVersion, pendingCount,
+      spatialQuery: spatialQuery && { ...spatialQuery }, filteredCodes: filtered.map(point => point.code) }; },
     select, setZoom, command,
     async benchmark(count = 100) {
       if (!testing) throw new Error("性能测试仅可在测试实例中运行。");

@@ -9,7 +9,7 @@
   const layers = { known: document.createElement("canvas"), difference: document.createElement("canvas") };
   for (const layer of Object.values(layers)) { layer.width = 352; layer.height = 400; }
   function notice(text, error = false) { $("notice").textContent = text; $("notice").classList.toggle("error", error); }
-  function busy(value) { for (const id of ["source", "refresh", "load", "snapshot", "send-main"]) $(id).disabled = value; }
+  function busy(value) { for (const id of ["source", "refresh", "load", "snapshot", "send-main", "send-search", "send-nearest", "send-nearby"]) $(id).disabled = value; }
   function request(action, extra = {}) {
     if (activeId) return;
     const id = nextId++; activeId = id; busy(true);
@@ -45,7 +45,7 @@
     clearTimeout(timeout);
     try {
       if (data.error) throw new Error(data.error);
-      if (data.navigated) { notice("已传到主窗口，仅定位视图，不修改点位。"); return; }
+      if (data.navigated) { notice(data.searchMode ? "已传到主窗口并筛选点位，不修改坐标。" : "已传到主窗口，仅定位视图，不修改点位。"); return; }
       let nextFrame = frame;
       if (data.frame) {
         if (data.frame.source !== $("source").value) throw new Error("图片来源已变化，请重新获取。");
@@ -190,6 +190,18 @@
   $("reset").onclick = () => { center = [176, 200]; scale = 1; clearSelection(); $("zoom").value = "1"; draw(); };
   $("clear-selection").onclick = () => { clearSelection(); draw(); };
   $("send-main").onclick = () => request("navigate", { documentId, code: selectedCode, x: center[0], y: center[1], scale });
+  function closeSearchMenu() { $("send-search-menu").hidden = true; $("send-search").setAttribute("aria-expanded", "false"); }
+  $("send-search").onclick = () => {
+    $("send-search-menu").hidden = !$("send-search-menu").hidden;
+    $("send-search").setAttribute("aria-expanded", String(!$("send-search-menu").hidden));
+  };
+  for (const mode of ["nearest", "nearby"]) $("send-" + mode).onclick = () => {
+    closeSearchMenu();
+    const target = selectedCode && selection ? [selection[0] + .5, selection[1] + .5] : center;
+    request("navigate", { documentId, code: selectedCode, x: target[0], y: target[1], scale, searchMode: mode });
+  };
+  document.addEventListener("click", event => { if (!event.target.closest(".search-actions")) closeSearchMenu(); });
+  document.addEventListener("keydown", event => { if (event.key === "Escape") closeSearchMenu(); });
   new ResizeObserver(draw).observe(document.querySelector("main"));
   decode("base-map.gif").then(image => { base = image; draw(); }).catch(() => notice("底图不可用；仍可比较监测像素。", true));
   request("ready");

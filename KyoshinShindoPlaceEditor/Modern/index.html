@@ -61,6 +61,7 @@
     <section class="stations" aria-label="观测站点">
       <div class="tablebar"><strong>观测站点</strong><span id="counts">0 个站点</span><input id="search" type="search" placeholder="搜索代码、名称或地区" aria-label="搜索站点"></div>
       <div class="table-filters"><label><input id="only-unmarked" type="checkbox">只显示未标注点位</label><select id="station-status" aria-label="停用状态筛选"><option value="all">全部站点</option><option value="active">不显示已停用站点</option><option value="suspended">只显示已停用站点</option></select><button id="fillDrafts" disabled title="为所有可换算的未标注站点生成内存草稿，确认前不写入文件">一键填充未标注</button></div>
+      <div id="spatial-filter" hidden><span id="spatial-summary" role="status"></span><label id="spatial-radius-label">半径 <input id="spatial-radius" type="number" min="0.1" max="20000" step="0.1" value="10"><span id="spatial-unit">原图像素</span></label><button id="clear-spatial">清除筛选</button></div>
       <div class="table-scroll" id="table-scroll" tabindex="0" role="grid" aria-label="站点列表" aria-rowcount="0">
         <div class="table-head row" role="row"><span>站点代码</span><span>网络</span><span>停用</span><span>名称</span><span>地区</span><span>经纬度</span><span>图像坐标</span></div>
         <div id="virtual-space"><div id="visible-rows"></div></div>
@@ -73,6 +74,8 @@
   <div id="notice" role="status" hidden><span></span><button id="dismiss" title="关闭提示" aria-label="关闭提示">×</button></div>
   <div id="context-menu" class="menu" hidden><button data-action="clear">清除图像坐标</button><button data-action="suspend">切换停用状态</button></div>
   <script src="image-coordinates.js"></script>
+  <div id="map-context-menu" class="menu" hidden><button data-station-search="nearest">寻找最近未标记点位</button><button data-station-search="nearby">寻找附近点位</button></div>
+  <script src="station-search.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

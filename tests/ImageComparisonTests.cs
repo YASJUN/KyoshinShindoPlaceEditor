@@ -76,6 +76,7 @@ internal static partial class EditorRegressionTests
             await wait("!document.getElementById('refresh').disabled && document.getElementById('missing').textContent !== '—'");
             Assert(await browser.ExecuteScriptAsync("!document.getElementById('notice').classList.contains('error')") == "true", "Borehole refresh failed.");
             await VerifyEditorToComparison(editor, editorBrowser, child, browser, wait);
+            await VerifySpatialSearch(editorBrowser, browser, wait);
             var output = Path.Combine(tempDir, "comparison-after.json");
             Invoke(model, "ModernSave", output);
             Assert(Equivalent(JsonRows(original), JsonRows(output)), "Comparison modified station data.");
@@ -131,6 +132,54 @@ internal static partial class EditorRegressionTests
             await evaluateMain("window.editorTest.command('ready')");
         }
         Console.WriteLine("PASS Editor to comparison: button lifecycle, known/draft/estimated coordinates, 4x, all canvases, source preservation, restore without topmost, no mask mutation");
+    }
+
+    private static async Task VerifySpatialSearch(WebView2 main, WebView2 comparison, Func<string, Task> wait)
+    {
+        var json = new JavaScriptSerializer();
+        await main.ExecuteScriptAsync("window.editorTest.select('OKN006');window.editorTest.setZoom(4);document.getElementById('dismiss').click()");
+        await Task.Delay(60);
+        Func<string, double, double, Task> mouse = async (type, x, y) => {
+            await main.CoreWebView2.CallDevToolsProtocolMethodAsync("Input.dispatchMouseEvent",
+                json.Serialize(new { type, x, y, button = "right", buttons = type == "mouseReleased" ? 0 : 2, clickCount = 1 }));
+        };
+        foreach (var canvas in new[] { "monitor", "geographic" })
+        {
+            var position = Object(json.DeserializeObject(await main.ExecuteScriptAsync("(()=>{const r=document.getElementById('" + canvas + "').getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2};})()")));
+            var x = Convert.ToDouble(position["x"]); var y = Convert.ToDouble(position["y"]);
+            await mouse("mousePressed", x, y); await mouse("mouseMoved", x + 20, y + 10); await mouse("mouseReleased", x + 20, y + 10);
+            Assert(await main.ExecuteScriptAsync("document.getElementById('map-context-menu').hidden") == "true", "Right drag opened search menu: " + canvas);
+            // Return to the station, then allow a tiny hand movement without treating it as a drag.
+            await main.ExecuteScriptAsync("window.editorTest.select('OKN006')");
+            await Task.Delay(40);
+            await mouse("mousePressed", x, y); await mouse("mouseMoved", x + 1, y + 1); await mouse("mouseReleased", x + 1, y + 1);
+            Assert(await main.ExecuteScriptAsync("!document.getElementById('map-context-menu').hidden") == "true", "Right click did not open search menu: " + canvas);
+            await main.ExecuteScriptAsync("document.querySelector('[data-station-search=nearby]').click();document.getElementById('dismiss').click()");
+            Assert(await main.ExecuteScriptAsync("window.editorTest.state.filteredCodes.includes('OKN006') && !document.getElementById('spatial-filter').hidden && window.editorTest.state.spatialQuery.space==='" + (canvas == "monitor" ? "image" : "map") + "'") == "true", "Nearby search did not include clicked station: " + canvas);
+            await main.ExecuteScriptAsync("document.getElementById('spatial-radius').value='0.1';document.getElementById('spatial-radius').dispatchEvent(new Event('change'))");
+            Assert(await main.ExecuteScriptAsync("window.editorTest.state.spatialQuery.radius===0.1") == "true", "Radius adjustment failed.");
+            await mouse("mousePressed", x, y); await mouse("mouseReleased", x, y);
+            await main.ExecuteScriptAsync("document.querySelector('[data-station-search=nearest]').click();document.getElementById('dismiss').click()");
+            Assert(await main.ExecuteScriptAsync("window.editorTest.state.filteredCodes.length>0 && document.getElementById('only-unmarked').checked && document.getElementById('station-status').value==='active' && [...document.querySelectorAll('.station-row')].every(r=>r.children[2].textContent==='否' && r.children[6].textContent==='未设置')") == "true", "Nearest search did not filter unmarked active candidates: " + canvas);
+            await main.ExecuteScriptAsync("document.getElementById('search').value='NO_MATCH';document.getElementById('search').dispatchEvent(new Event('input'))");
+            Assert(await main.ExecuteScriptAsync("window.editorTest.state.filteredCodes.length===0") == "true", "Text filter not combined with spatial search.");
+            await main.ExecuteScriptAsync("document.getElementById('clear-spatial').click()");
+            Assert(await main.ExecuteScriptAsync("window.editorTest.state.filteredCodes.length===window.editorTest.state.count && document.getElementById('spatial-filter').hidden") == "true", "Clear filters did not restore list.");
+        }
+        await main.ExecuteScriptAsync("document.getElementById('send-comparison').click()");
+        await wait("document.getElementById('point-title').textContent.includes('OKN006')");
+        await comparison.ExecuteScriptAsync("document.getElementById('send-search').click();document.getElementById('send-nearest').click()");
+        await wait("!document.getElementById('send-nearest').disabled");
+        await Task.Delay(60);
+        Assert(await main.ExecuteScriptAsync("(()=>{const s=window.editorTest.state;return s.spatialQuery.mode==='nearest' && s.spatialQuery.x===86.5 && s.spatialQuery.y===140.5 && s.filteredCodes.length>0;})()") == "true", "Comparison selected station search failed.");
+        // Plain station navigation must still reveal the selected marked station after nearest filtering.
+        await comparison.ExecuteScriptAsync("document.getElementById('send-main').click()");
+        await wait("!document.getElementById('send-main').disabled");
+        Assert(await main.ExecuteScriptAsync("!window.editorTest.state.spatialQuery && window.editorTest.state.filteredCodes.includes('OKN006')") == "true", "Plain navigation did not clear hiding spatial filter.");
+        await comparison.ExecuteScriptAsync("document.getElementById('reset').click();document.getElementById('send-search').click();document.getElementById('send-nearby').click()");
+        await wait("!document.getElementById('send-nearby').disabled");
+        Assert(await main.ExecuteScriptAsync("(()=>{const s=window.editorTest.state;return s.spatialQuery.mode==='nearby' && s.spatialQuery.x===176 && s.spatialQuery.y===200 && s.selected==='OKN006';})()") == "true", "Comparison current-view search changed selection or center.");
+        Console.WriteLine("PASS Spatial search: native right click vs drag on both canvases, radius, filters/reset, selected/view comparison search, plain navigation");
     }
 
     private static async Task VerifyComparisonNavigation(ModernEditorForm editor, WebView2 main, WebView2 comparison, Func<string, Task> wait)

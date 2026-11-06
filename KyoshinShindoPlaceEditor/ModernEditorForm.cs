@@ -250,7 +250,7 @@ namespace KyoshinShindoPlaceEditor
 		private string _currentSavePath;
 		private ImageComparisonForm _comparison;
 
-		private async Task NavigateFromComparisonAsync(string documentId, string code, double x, double y, double scale)
+		private async Task NavigateFromComparisonAsync(string documentId, string code, double x, double y, double scale, string searchMode)
 		{
 			await _commands.WaitAsync();
 			try
@@ -258,9 +258,9 @@ namespace KyoshinShindoPlaceEditor
 				if (IsDisposed) throw new InvalidOperationException("主窗口已关闭。");
 				if (documentId != _model.ModernDocumentId)
 					throw new InvalidOperationException("主窗口已打开其他文件，请先同步编辑器点位。");
-				if (code != null) _model.ModernSelect(code);
+				if (code != null && searchMode == null) _model.ModernSelect(code);
 				if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
-				Post(new { type = "comparisonNavigate", state = _model.ModernState(), dirty = _dirty, code, x, y, scale });
+				Post(new { type = "comparisonNavigate", state = _model.ModernState(), dirty = _dirty, code, x, y, scale, searchMode });
 				Activate();
 			}
 			finally { _commands.Release(); }

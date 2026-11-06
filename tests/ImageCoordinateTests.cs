@@ -308,7 +308,7 @@ internal static partial class EditorRegressionTests
             window.editorTest.select('ESTTOKYO');
             $('fillDrafts').click(); await window.waitDraft();
             assertDraft(!$('confirmDraft').disabled,'Missing explicit confirmation: '+$('notice').textContent);
-            assertDraft(document.querySelector('[data-code=ESTTOKYO]').textContent.includes('待核对 227, 260'),'Draft left unmarked list');
+            assertDraft(document.querySelector('[data-code=ESTTOKYO]').textContent.includes('待核对 227, 259'),'Draft left unmarked list');
             assertDraft($('counts').textContent.includes('1 已标注') && $('counts').textContent.includes('3 待核对'),'Draft count is incorrect');
             assertDraft($('selection').textContent.includes('尚未写入'),'Missing draft state');
             await window.editorTest.command('edit',{code:'ESTNAHA',x:228,y:260});
@@ -320,7 +320,7 @@ internal static partial class EditorRegressionTests
                 clientX:rect.x+(229.5*matrix.a+matrix.e)/devicePixelRatio,
                 clientY:rect.y+(259.5*matrix.d+matrix.f)/devicePixelRatio}));
             await window.waitDraft();
-            assertDraft($('selection').textContent.includes('偏移：2, -1'),'Draft offset not displayed');
+            assertDraft($('selection').textContent.includes('偏移：2, 0'),'Draft offset not displayed');
             assertDraft(!$('geo-preview').hidden && $('geo-preview').textContent.includes('临时'),'Draft click lost temporary geographic preview');
             await window.editorTest.command('save');
             assertDraft(!$('confirmDraft').disabled,'Save discarded the draft');

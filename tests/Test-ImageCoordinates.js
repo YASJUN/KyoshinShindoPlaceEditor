@@ -4,13 +4,13 @@ const { test } = require("node:test");
 const { latLonToImage, imageToLatLon, isInsideImage } = require("../KyoshinShindoPlaceEditor/Modern/image-coordinates.js");
 
 for (const [latitude, longitude, expected] of [
-  [35.6812, 139.7671, { x: 227, y: 260 }],
-  [34.6937, 135.5023, { x: 140, y: 284 }],
+  [35.6812, 139.7671, { x: 227, y: 259 }],
+  [34.6937, 135.5023, { x: 140, y: 283 }],
   [43.0618, 141.3545, { x: 259, y: 78 }],
-  [26.2124, 127.6809, { x: 107, y: 147 }],
-  [28.451, 129.6784, { x: 148, y: 92 }],
-  [29.9, 130, { x: 29, y: 402 }],
-  [29.8999, 130, { x: 154, y: 56 }]
+  [26.2124, 127.6809, { x: 105, y: 143 }],
+  [28.451, 129.6784, { x: 146, y: 88 }],
+  [29.9, 130, { x: 28, y: 401 }],
+  [29.8999, 130, { x: 152, y: 52 }]
 ]) test(`reference (${latitude}, ${longitude})`, () => assert.deepEqual(latLonToImage(latitude, longitude), expected));
 
 test("nonfinite and nonnumeric inputs return null", () => {
@@ -21,8 +21,8 @@ test("nonfinite and nonnumeric inputs return null", () => {
 
 function locationForPixel(main, x, y) {
   return main
-    ? [31 + (374.5 - y) / 24.5517, (x + 20.2053 * 129.74 - 24 + 7) / 20.2553]
-    : [24.32 + (193.7 - y) / 24.7031, 123.8 + (x - 28) / 20.3735];
+    ? [(y - 1134.80999166) / -24.54181987, (x + 2617.89823450) / 20.35281411]
+    : [(y - 786.83014391) / -24.56097072, (x + 2496.24370754) / 20.37291523];
 }
 
 test("mainland points inside the inset are rejected", () => {
@@ -52,24 +52,16 @@ test("rounding precedes region validation", () => {
   assert.deepEqual(latLonToImage(...locationForPixel(true, 171.6, 100)), { x: 172, y: 100 });
   assert.equal(latLonToImage(...locationForPixel(false, 171.6, 100)), null);
 });
-test("exact positive and negative .5 ties round toward positive infinity", () => {
-  assert.deepEqual(latLonToImage(31, 140), { x: 231, y: 375 });
-  assert.deepEqual(latLonToImage(20031, 140), { x: 231, y: -490659 });
-});
-test("conversion preserves out-of-bounds results; rendering rejects them without clamping", () => {
-  assert.equal(isInsideImage(latLonToImage(29.9, 130)), false);
-  for (const point of [null, { x: -1, y: 200 }, { x: 352, y: 200 }, { x: 200, y: -1 },
-    { x: 200, y: 400 }, { x: Infinity, y: 10 }, { x: 10, y: NaN }])
-    assert.equal(isInsideImage(point), false);
-  assert.equal(isInsideImage({ x: 0, y: 0 }), true);
-  assert.equal(isInsideImage({ x: 351, y: 399 }), true);
+test("rounding uses the nearest calibrated pixel", () => {
+  assert.deepEqual(latLonToImage(...locationForPixel(true, 230.49, 374.49)), { x: 230, y: 374 });
+  assert.deepEqual(latLonToImage(...locationForPixel(true, 230.51, 374.51)), { x: 231, y: 375 });
 });
 
 test("inverse maps mainland and inset pixels to approximate geographic coordinates", () => {
   for (const [x, y, latitude, longitude] of [
-    [227, 260, 35.6812, 139.7671], [140, 284, 34.6937, 135.5023],
-    [259, 78, 43.0618, 141.3545], [107, 147, 26.2124, 127.6809],
-    [148, 92, 28.451, 129.6784], [154, 56, 29.8999, 130]
+    [227, 259, 35.6812, 139.7671], [140, 283, 34.6937, 135.5023],
+    [259, 78, 43.0618, 141.3545], [105, 143, 26.2124, 127.6809],
+    [146, 88, 28.451, 129.6784]
   ]) {
     const result = imageToLatLon(x, y);
     assert.ok(Math.abs(result.latitude - latitude) < 0.021);
@@ -78,11 +70,37 @@ test("inverse maps mainland and inset pixels to approximate geographic coordinat
   }
 });
 
+test("conversion preserves out-of-bounds results; rendering rejects them without clamping", () => {
+  assert.equal(isInsideImage(latLonToImage(29.9, 130)), false);
+  for (const point of [null, { x: -1, y: 200 }, { x: 352, y: 200 }, { x: 200, y: -1 },
+    { x: 200, y: 400 }, { x: Infinity, y: 10 }, { x: 10, y: NaN }]) assert.equal(isInsideImage(point), false);
+  assert.equal(isInsideImage({ x: 0, y: 0 }), true);
+  assert.equal(isInsideImage({ x: 351, y: 399 }), true);
+});
+
+test("independent Hokkaido and Okinawa image controls improve after calibration", () => {
+  const controls = require("./fixtures/calibration-stations.json");
+  for (const region of ["北海道", "沖縄県"]) {
+    const rows = controls.filter(p => p.region === region);
+    let before = 0, after = 0;
+    for (const p of rows) {
+      const main = p.latitude >= 29.9;
+      const oldX = Math.round(main ? 20.2053 * (p.longitude - 129.74) + 24 + (p.longitude - 140) / 20 : 20.3735 * (p.longitude - 123.8) + 28);
+      const oldY = Math.round(main ? -24.5517 * (p.latitude - 31) + 374.5 : -24.7031 * (p.latitude - 24.32) + 193.7);
+      const pixel = latLonToImage(p.latitude, p.longitude);
+      before += (oldX - p.observed[0]) ** 2 + (oldY - p.observed[1]) ** 2;
+      const distance = (pixel.x - p.observed[0]) ** 2 + (pixel.y - p.observed[1]) ** 2;
+      assert.ok(distance <= 1, p.code + " exceeds one pixel"); after += distance;
+    }
+    assert.ok(after < before / 4, region + " calibration did not improve");
+  }
+});
+
 test("inverse rejects invalid, out-of-image and unmappable inset coordinates", () => {
   for (const value of [NaN, Infinity, -Infinity, undefined, null, "100"])
     for (const pair of [[value, 100], [100, value]])
       assert.equal(imageToLatLon(...pair), null);
-  for (const pair of [[-1, 200], [352, 200], [200, -1], [200, 400], [154, 55]])
+  for (const pair of [[-1, 200], [352, 200], [200, -1], [200, 400], [154, 51]])
     assert.equal(imageToLatLon(...pair), null);
 });
 
@@ -103,6 +121,6 @@ test("every mapped image pixel round trips without clamping or changing regions"
         const pixel = latLonToImage(result.latitude, result.longitude);
         assert.deepEqual({ x: pixel.x + 0, y: pixel.y + 0 }, { x, y });
       }
-      else assert.ok(x < 172 && y < 56, `Unexpected unmappable pixel: ${x},${y}`);
+      else assert.ok(x < 172 && y < 53, `Unexpected unmappable pixel: ${x},${y}`);
     }
 });

@@ -69,7 +69,7 @@
       assert(document.getElementById("table-scroll").getAttribute("aria-rowcount") === "7", "Full list was not restored");
       return true;
     };
-    for (const [code, x, y] of [["ESTTOKYO", 227, 260], ["ESTNAHA", 107, 147], ["ESTEDGE", 154, 56]]) {
+    for (const [code, x, y] of [["ESTTOKYO", 227, 259], ["ESTNAHA", 105, 143], ["ESTEDGE", 152, 52]]) {
       for (const scale of [1, 3, 5, 10]) {
         safetyDraws = 0;
         window.editorTest.select(code);
@@ -99,10 +99,10 @@
     window.editorTest.select("ESTTOKYO");
     window.editorTest.setZoom(3);
     await tick();
-    const before = context.getTransform().transformPoint({ x: 227.5, y: 260.5 });
+    const before = context.getTransform().transformPoint({ x: 227.5, y: 259.5 });
     window.verifyImageMarkerPan = async (dx, dy) => {
       await tick();
-      const after = context.getTransform().transformPoint({ x: 227.5, y: 260.5 });
+      const after = context.getTransform().transformPoint({ x: 227.5, y: 259.5 });
       assert(Math.abs(after.x - before.x - dx * devicePixelRatio) < 1
         && Math.abs(after.y - before.y - dy * devicePixelRatio) < 1, "Marker ignored the image pan offset");
       assert(isBlue(after.x, after.y), "Panned marker no longer follows the displayed image");

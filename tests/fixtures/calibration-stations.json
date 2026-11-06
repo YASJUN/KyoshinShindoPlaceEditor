@@ -1,0 +1,392 @@
+[
+  {
+    "code": "ABSH08",
+    "region": "北海道",
+    "latitude": 44.064,
+    "longitude": 144.9935,
+    "observed": [
+      333,
+      53
+    ]
+  },
+  {
+    "code": "IBUH05",
+    "region": "北海道",
+    "latitude": 42.5629,
+    "longitude": 141.3497,
+    "observed": [
+      259,
+      90
+    ]
+  },
+  {
+    "code": "KKWH10",
+    "region": "北海道",
+    "latitude": 44.6617,
+    "longitude": 142.0528,
+    "observed": [
+      273,
+      39
+    ]
+  },
+  {
+    "code": "KKWH15",
+    "region": "北海道",
+    "latitude": 43.8546,
+    "longitude": 142.7656,
+    "observed": [
+      288,
+      59
+    ]
+  },
+  {
+    "code": "KSRH01",
+    "region": "北海道",
+    "latitude": 43.4361,
+    "longitude": 144.0844,
+    "observed": [
+      315,
+      69
+    ]
+  },
+  {
+    "code": "KSRH08",
+    "region": "北海道",
+    "latitude": 43.1603,
+    "longitude": 143.8936,
+    "observed": [
+      311,
+      76
+    ]
+  },
+  {
+    "code": "TKCH10",
+    "region": "北海道",
+    "latitude": 43.3337,
+    "longitude": 142.9448,
+    "observed": [
+      291,
+      71
+    ]
+  },
+  {
+    "code": "TKCH11",
+    "region": "北海道",
+    "latitude": 42.8742,
+    "longitude": 142.883,
+    "observed": [
+      290,
+      83
+    ]
+  },
+  {
+    "code": "HKD001",
+    "region": "北海道",
+    "latitude": 45.4163,
+    "longitude": 141.672,
+    "observed": [
+      266,
+      20
+    ]
+  },
+  {
+    "code": "HKD010",
+    "region": "北海道",
+    "latitude": 44.7406,
+    "longitude": 142.7633,
+    "observed": [
+      288,
+      37
+    ]
+  },
+  {
+    "code": "HKD015",
+    "region": "北海道",
+    "latitude": 44.8846,
+    "longitude": 141.7503,
+    "observed": [
+      267,
+      33
+    ]
+  },
+  {
+    "code": "HKD019",
+    "region": "北海道",
+    "latitude": 44.3611,
+    "longitude": 141.6978,
+    "observed": [
+      266,
+      46
+    ]
+  },
+  {
+    "code": "HKD023",
+    "region": "北海道",
+    "latitude": 43.7734,
+    "longitude": 141.3686,
+    "observed": [
+      259,
+      61
+    ]
+  },
+  {
+    "code": "HKD036",
+    "region": "北海道",
+    "latitude": 43.7726,
+    "longitude": 142.3648,
+    "observed": [
+      280,
+      61
+    ]
+  },
+  {
+    "code": "HKD051",
+    "region": "北海道",
+    "latitude": 44.0187,
+    "longitude": 143.7747,
+    "observed": [
+      308,
+      54
+    ]
+  },
+  {
+    "code": "HKD060",
+    "region": "北海道",
+    "latitude": 43.9136,
+    "longitude": 144.6657,
+    "observed": [
+      326,
+      57
+    ]
+  },
+  {
+    "code": "HKD072",
+    "region": "北海道",
+    "latitude": 43.1948,
+    "longitude": 145.5209,
+    "observed": [
+      344,
+      75
+    ]
+  },
+  {
+    "code": "HKD073",
+    "region": "北海道",
+    "latitude": 43.3327,
+    "longitude": 145.6003,
+    "observed": [
+      345,
+      71
+    ]
+  },
+  {
+    "code": "HKD074",
+    "region": "北海道",
+    "latitude": 43.368,
+    "longitude": 145.8026,
+    "observed": [
+      350,
+      71
+    ]
+  },
+  {
+    "code": "HKD076",
+    "region": "北海道",
+    "latitude": 43.0509,
+    "longitude": 144.8498,
+    "observed": [
+      330,
+      78
+    ]
+  },
+  {
+    "code": "HKD077",
+    "region": "北海道",
+    "latitude": 42.9845,
+    "longitude": 144.3824,
+    "observed": [
+      321,
+      80
+    ]
+  },
+  {
+    "code": "HKD096",
+    "region": "北海道",
+    "latitude": 42.6977,
+    "longitude": 143.1357,
+    "observed": [
+      295,
+      87
+    ]
+  },
+  {
+    "code": "HKD100",
+    "region": "北海道",
+    "latitude": 42.2864,
+    "longitude": 143.312,
+    "observed": [
+      299,
+      97
+    ]
+  },
+  {
+    "code": "HKD108",
+    "region": "北海道",
+    "latitude": 42.2528,
+    "longitude": 142.5643,
+    "observed": [
+      284,
+      98
+    ]
+  },
+  {
+    "code": "HKD129",
+    "region": "北海道",
+    "latitude": 42.6347,
+    "longitude": 141.6057,
+    "observed": [
+      264,
+      89
+    ]
+  },
+  {
+    "code": "HKD137",
+    "region": "北海道",
+    "latitude": 43.3236,
+    "longitude": 140.3791,
+    "observed": [
+      239,
+      72
+    ]
+  },
+  {
+    "code": "HKD140",
+    "region": "北海道",
+    "latitude": 43.1908,
+    "longitude": 140.9933,
+    "observed": [
+      252,
+      75
+    ]
+  },
+  {
+    "code": "HKD154",
+    "region": "北海道",
+    "latitude": 42.0965,
+    "longitude": 140.5636,
+    "observed": [
+      243,
+      102
+    ]
+  },
+  {
+    "code": "HKD172",
+    "region": "北海道",
+    "latitude": 42.2402,
+    "longitude": 139.5519,
+    "observed": [
+      222,
+      98
+    ]
+  },
+  {
+    "code": "HKD173",
+    "region": "北海道",
+    "latitude": 42.0662,
+    "longitude": 139.4515,
+    "observed": [
+      220,
+      102
+    ]
+  },
+  {
+    "code": "HKD175",
+    "region": "北海道",
+    "latitude": 43.6015,
+    "longitude": 141.3882,
+    "observed": [
+      260,
+      65
+    ]
+  },
+  {
+    "code": "HKD183",
+    "region": "北海道",
+    "latitude": 42.9714,
+    "longitude": 141.1779,
+    "observed": [
+      255,
+      80
+    ]
+  },
+  {
+    "code": "HKD185",
+    "region": "北海道",
+    "latitude": 42.7756,
+    "longitude": 141.4016,
+    "observed": [
+      260,
+      85
+    ]
+  },
+  {
+    "code": "OKN001",
+    "region": "沖縄県",
+    "latitude": 26.7402,
+    "longitude": 128.1736,
+    "observed": [
+      115,
+      130
+    ]
+  },
+  {
+    "code": "OKN002",
+    "region": "沖縄県",
+    "latitude": 26.5916,
+    "longitude": 127.9767,
+    "observed": [
+      111,
+      134
+    ]
+  },
+  {
+    "code": "OKN003",
+    "region": "沖縄県",
+    "latitude": 26.38,
+    "longitude": 127.8572,
+    "observed": [
+      109,
+      139
+    ]
+  },
+  {
+    "code": "OKN006",
+    "region": "沖縄県",
+    "latitude": 26.3497,
+    "longitude": 126.7479,
+    "observed": [
+      86,
+      140
+    ]
+  },
+  {
+    "code": "OKN009",
+    "region": "沖縄県",
+    "latitude": 24.3413,
+    "longitude": 124.1526,
+    "observed": [
+      33,
+      189
+    ]
+  },
+  {
+    "code": "OKN010",
+    "region": "沖縄県",
+    "latitude": 24.5088,
+    "longitude": 124.282,
+    "observed": [
+      36,
+      185
+    ]
+  }
+]

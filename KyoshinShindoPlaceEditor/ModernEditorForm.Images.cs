@@ -23,35 +23,11 @@ namespace KyoshinShindoPlaceEditor
 		{
 			if (source != "surface" && source != "borehole") throw new InvalidDataException("未知图像来源。");
 			var sequence = ++_imageSequence;
-			var stamp = DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(9)).AddSeconds(-15).ToString("yyyyMMddHHmmss");
-			var kind = source == "surface" ? "jma_s" : "jma_b";
-			var url = "http://www.kmoni.bosai.go.jp/data/map_img/RealTimeImg/" + kind + "/"
-				+ stamp.Substring(0, 8) + "/" + stamp + "." + kind + ".gif";
 			try
 			{
-				var bytes = await Task.Run(() =>
-				{
-					var request = (HttpWebRequest)WebRequest.Create(url);
-					request.Timeout = request.ReadWriteTimeout = 8000;
-					using (var response = request.GetResponse())
-					using (var input = response.GetResponseStream())
-					using (var output = new MemoryStream())
-					{
-						var block = new byte[8192];
-						int count;
-						while ((count = input.Read(block, 0, block.Length)) > 0)
-						{
-							if (output.Length + count > 2 * 1024 * 1024) throw new InvalidDataException("图像超出预期大小。");
-							output.Write(block, 0, count);
-						}
-						output.Position = 0;
-						using (var image = Image.FromStream(output))
-							if (image.Width != 352 || image.Height != 400) throw new InvalidDataException("监测图像尺寸不正确。");
-						return output.ToArray();
-					}
-				});
+				var frame = await MonitorImageClient.DownloadAsync(source);
 				if (sequence == _imageSequence)
-					Post(new { type = "monitorImage", image = "data:image/gif;base64," + Convert.ToBase64String(bytes), stamp });
+					Post(new { type = "monitorImage", image = frame.image, stamp = frame.stamp });
 			}
 			catch (Exception ex)
 			{

@@ -785,6 +785,7 @@ internal static partial class EditorRegressionTests
                     Assert(Equivalent(JsonRows(output), JsonRows(samplePath)), "Modern UI edit/undo changed JSON metadata.");
                     await VerifyModernNiedUpdate(form, browser);
                     await VerifyModernClear(form, browser);
+                    await VerifyComparisonWindow(form, browser);
                     await browser.ExecuteScriptAsync("window.editorTest.select('ABSH01'); window.editorTest.setZoom(3);");
                     await System.Threading.Tasks.Task.Delay(200);
                     using (var image = File.Create(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "modern-editor.png")))

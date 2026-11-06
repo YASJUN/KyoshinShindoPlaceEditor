@@ -65,6 +65,8 @@
     <Compile Include="MainForm.ModernModel.cs" />
     <Compile Include="ModernEditorForm.cs" />
     <Compile Include="ModernEditorForm.Images.cs" />
+    <Compile Include="MonitorImageClient.cs" />
+    <Compile Include="ImageComparisonForm.cs" />
     <Compile Include="MainForm.Designer.cs">
       <DependentUpon>MainForm.cs</DependentUpon>
     </Compile>
@@ -119,6 +121,10 @@
     <Content Include="Modern\styles.css"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></Content>
     <Content Include="Modern\app.js"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></Content>
     <Content Include="Modern\image-coordinates.js"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></Content>
+    <Content Include="Modern\comparison.html"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></Content>
+    <Content Include="Modern\comparison.css"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></Content>
+    <Content Include="Modern\comparison.js"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></Content>
+    <Content Include="Modern\image-comparison.js"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></Content>
     <Content Include="Modern\base-map.gif"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></Content>
     <Content Include="..\packages\Microsoft.Web.WebView2.1.0.4314.35\LICENSE.txt">
       <Link>WebView2-LICENSE.txt</Link>

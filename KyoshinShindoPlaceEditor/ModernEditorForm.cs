@@ -133,6 +133,16 @@ namespace KyoshinShindoPlaceEditor
 				}
 				return null;
 			}
+			if (action == "compare")
+			{
+				if (_comparison == null || _comparison.IsDisposed)
+				{
+					_comparison = new ImageComparisonForm(() => _model.ModernState());
+					_comparison.Show(this);
+				}
+				else { _comparison.WindowState = FormWindowState.Normal; _comparison.Activate(); }
+				return null;
+			}
 			if (action == "open" || action == "merge")
 			{
 				if (action == "open" && !ConfirmDiscard()) return null;
@@ -225,6 +235,7 @@ namespace KyoshinShindoPlaceEditor
 		}
 
 		private string _currentSavePath;
+		private ImageComparisonForm _comparison;
 
 		private static int Integer(Dictionary<string, object> command, string name)
 		{

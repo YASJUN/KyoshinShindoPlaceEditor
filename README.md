@@ -1,5 +1,9 @@
 # KyoshinShindoPlaceEditor
 
+## 0.0.13.0
+
+固定地図の座標変換を北海道・沖縄の観測点で校正しました。画像比較ボタンは別ウィンドウを開き、既知の座標と監測画像の不足ピクセルを赤、追加ピクセルをシアンで表示します。比較は読み取り専用です。[校正記録](CALIBRATION.md)・[中国語の操作説明](readme_CN.md)を参照してください。
+
 [简体中文](readme_CN.md) | 日本語
 
 強震モニタ画像の色を取得するピクセル座標を編集する Windows アプリケーションです。**0.0.7.0 では WebView2 + Canvas UI が既定**です。従来の Windows Forms UI も互換モードとして残しています。
@@ -105,13 +109,13 @@
 独立モジュールは `Modern/image-coordinates.js` です。緯度・経度の順に指定します。
 
 ```javascript
-const point = ImageCoordinates.latLonToImage(35.6812, 139.7671); // { x: 227, y: 260 }
+const point = ImageCoordinates.latLonToImage(35.6812, 139.7671); // { x: 227, y: 259 }
 if (ImageCoordinates.isInsideImage(point)) {
   // 原画像の座標を使用。Canvas 側の倍率・余白処理と二重に拡縮しないでください。
 }
 ```
 
-無効値・区域不一致は `null` です。元の計算順序と JavaScript `Math.round` を保持し、丸めた後に区域を判定します。基礎関数は画像外も返します（`29.9,130` → `{x:29,y:402}`）。描画前に別の `isInsideImage` で範囲確認し、画像端への補正はしません。Node.js の `require` からも単独利用でき、ブラウザーやネットワークは不要です。
+無効値・区域不一致は `null` です。元の計算順序と JavaScript `Math.round` を保持し、丸めた後に区域を判定します。基礎関数は画像外も返します（`29.9,130` → `{x:28,y:401}`）。描画前に別の `isInsideImage` で範囲確認し、画像端への補正はしません。Node.js の `require` からも単独利用でき、ブラウザーやネットワークは不要です。
 
 ### 点滅と 3×3 安全枠
 

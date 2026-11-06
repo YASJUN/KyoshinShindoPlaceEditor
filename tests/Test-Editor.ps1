@@ -33,6 +33,7 @@ $testExe = Join-Path $bin 'EditorRegressionTests.exe'
     "/reference:$bin\Microsoft.Web.WebView2.Core.dll" "/reference:$bin\Microsoft.Web.WebView2.WinForms.dll" `
     (Join-Path $PSScriptRoot 'EditorRegressionTests.cs') `
     (Join-Path $PSScriptRoot 'ImageCoordinateTests.cs') `
+    (Join-Path $PSScriptRoot 'ImageComparisonTests.cs') `
     (Join-Path $PSScriptRoot 'SafetyConflictTests.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Regression tests did not compile.' }
 if ($ClearOnly) { & $testExe $SamplePath --clear }

@@ -89,6 +89,26 @@
       $("image-status").textContent = imageWarning;
     }
     if (data.type === "notice") notice(data.text);
+    if (data.type === "comparisonNavigate") {
+      applyState(data.state, data.dirty);
+      geographicPreview = null; previewRevision++; updateGeographicPreview();
+      if (data.code && byCode.has(data.code)) {
+        if (!filtered.some(point => point.code === data.code)) {
+          $("search").value = ""; $("only-unmarked").checked = false; $("station-status").value = "all";
+          filterRows();
+        }
+        select(data.code);
+        setZoom(data.scale);
+        // Explicit cross-window navigation works even with automatic linking disabled.
+        locate();
+      } else {
+        setZoom(data.scale);
+        monitor.x = monitor.width / 2 - data.x * monitor.scale;
+        monitor.y = monitor.height / 2 - data.y * monitor.scale;
+        scheduleDraw();
+      }
+      notice(data.code ? "已定位对比窗口选中的站点。" : "已同步对比窗口的图像视野，当前站点保持不变。");
+    }
   });
 
   function loadImage(key, source) {

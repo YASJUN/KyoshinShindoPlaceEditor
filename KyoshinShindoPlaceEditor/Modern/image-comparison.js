@@ -51,7 +51,14 @@
     }
     return { expected, labels, counts, stations, missingStations, additions };
   }
-  const api = { WIDTH, HEIGHT, observedMask, eligible, compare };
+  function hitTest(stations, x, y, scale) {
+    const radius = Math.max(1.5, 6 / scale);
+    return stations.map(point => ({ point, distance: (point.pixel[0] + .5 - x) ** 2 + (point.pixel[1] + .5 - y) ** 2 }))
+      .filter(hit => hit.distance <= radius ** 2)
+      .sort((a,b) => a.distance - b.distance || a.point.code.localeCompare(b.point.code))
+      .map(hit => hit.point);
+  }
+  const api = { WIDTH, HEIGHT, observedMask, eligible, compare, hitTest };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else window.ImageComparison = api;
 })();

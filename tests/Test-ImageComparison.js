@@ -4,6 +4,14 @@ const { test } = require("node:test");
 const { WIDTH, HEIGHT, observedMask, compare } = require("../KyoshinShindoPlaceEditor/Modern/image-comparison");
 const point = (code, x, y, extra = {}) => ({ code, name: code, pixel: [x,y], type: "K-NET", suspended: false, ...extra });
 const empty = () => new Uint8Array(WIDTH * HEIGHT);
+test("picking respects pixel centers, zoom and deterministic overlapping candidates", () => {
+  const { hitTest } = require("../KyoshinShindoPlaceEditor/Modern/image-comparison");
+  const points = [point("B",20,20),point("A",20,20),point("C",24,20)];
+  assert.deepEqual(hitTest(points,20.5,20.5,10).map(p=>p.code),["A","B"]);
+  assert.deepEqual(hitTest(points,20.5,20.5,1).map(p=>p.code),["A","B","C"]);
+  assert.equal(hitTest(points,100,100,1).length,0);
+  assert.equal(hitTest(points,21.4,21.4,10).length,2);
+});
 function square(mask, x, y) { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) mask[(y+dy)*WIDTH+x+dx] = 1; return mask; }
 test("transparent pixels, black text and gray map are not stations; intensity changes preserve presence", () => {
   const rgba = new Uint8ClampedArray(WIDTH*HEIGHT*4);

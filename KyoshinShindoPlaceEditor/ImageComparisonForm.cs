@@ -13,12 +13,14 @@ namespace KyoshinShindoPlaceEditor
     {
         private readonly WebView2 _browser = new WebView2 { Dock = DockStyle.Fill };
         private readonly Func<object> _snapshot;
+        private readonly Func<string, string, double, double, double, Task> _navigate;
         private Func<string, Task<MonitorFrame>> _download = MonitorImageClient.DownloadAsync;
         private readonly JavaScriptSerializer _json = new JavaScriptSerializer { MaxJsonLength = 16 * 1024 * 1024 };
 
-        internal ImageComparisonForm(Func<object> snapshot)
+        internal ImageComparisonForm(Func<object> snapshot, Func<string, string, double, double, double, Task> navigate)
         {
             _snapshot = snapshot;
+            _navigate = navigate;
             Text = "点位与监测图像对比";
             ClientSize = new System.Drawing.Size(1240, 820);
             MinimumSize = new System.Drawing.Size(900, 650);
@@ -63,6 +65,18 @@ namespace KyoshinShindoPlaceEditor
                 id = Convert.ToInt32(command["id"]);
                 var action = (string)command["action"];
                 MonitorFrame frame = null;
+                if (action == "navigate")
+                {
+                    var x = Convert.ToDouble(command["x"]);
+                    var y = Convert.ToDouble(command["y"]);
+                    var scale = Convert.ToDouble(command["scale"]);
+                    if (double.IsNaN(x) || double.IsInfinity(x) || double.IsNaN(y) || double.IsInfinity(y)
+                        || double.IsNaN(scale) || scale < 1 || scale > 10 || Math.Abs(x) > 100000 || Math.Abs(y) > 100000)
+                        throw new InvalidDataException("视图位置无效。");
+                    await _navigate((string)command["documentId"], command["code"] as string, x, y, scale);
+                    Post(new { id, navigated = true });
+                    return;
+                }
                 if (action == "refresh") frame = await _download((string)command["source"]);
                 else if (action == "loadImage")
                 {

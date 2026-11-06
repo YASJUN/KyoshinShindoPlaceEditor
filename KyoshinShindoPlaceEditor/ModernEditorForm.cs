@@ -137,8 +137,8 @@ namespace KyoshinShindoPlaceEditor
 			{
 				if (_comparison == null || _comparison.IsDisposed)
 				{
-					_comparison = new ImageComparisonForm(() => _model.ModernState());
-					_comparison.Show(this);
+					_comparison = new ImageComparisonForm(() => _model.ModernState(), NavigateFromComparisonAsync);
+					_comparison.Show();
 				}
 				else { _comparison.WindowState = FormWindowState.Normal; _comparison.Activate(); }
 				return null;
@@ -237,6 +237,22 @@ namespace KyoshinShindoPlaceEditor
 		private string _currentSavePath;
 		private ImageComparisonForm _comparison;
 
+		private async Task NavigateFromComparisonAsync(string documentId, string code, double x, double y, double scale)
+		{
+			await _commands.WaitAsync();
+			try
+			{
+				if (IsDisposed) throw new InvalidOperationException("主窗口已关闭。");
+				if (documentId != _model.ModernDocumentId)
+					throw new InvalidOperationException("主窗口已打开其他文件，请先同步编辑器点位。");
+				if (code != null) _model.ModernSelect(code);
+				if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
+				Post(new { type = "comparisonNavigate", state = _model.ModernState(), dirty = _dirty, code, x, y, scale });
+				Activate();
+			}
+			finally { _commands.Release(); }
+		}
+
 		private static int Integer(Dictionary<string, object> command, string name)
 		{
 			object value;
@@ -257,6 +273,7 @@ namespace KyoshinShindoPlaceEditor
 		{
 			if (disposing)
 			{
+				_comparison?.Dispose();
 				_browser.Dispose();
 				_model.Dispose();
 			}

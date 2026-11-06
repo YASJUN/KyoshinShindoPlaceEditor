@@ -9,6 +9,7 @@ namespace KyoshinShindoPlaceEditor
 	public partial class MainForm
 	{
 		private bool _headless;
+		internal string ModernDocumentId { get; private set; } = Guid.NewGuid().ToString("N");
 		private ObservationPoint _modernSelection;
 		private sealed class DraftPoint
 		{
@@ -82,6 +83,7 @@ namespace KyoshinShindoPlaceEditor
 				patch = changedCode == null ? null : rows.FirstOrDefault(),
 				selected = _modernSelection?.Code,
 				path = _lastFilePath,
+				documentId = ModernDocumentId,
 				draftCount = ModernDraftCount,
 				undoCount = _undoHistory.Count,
 				undoLabel = _undoHistory.Count == 0 ? "" : _undoHistory.Last().Label
@@ -94,6 +96,7 @@ namespace KyoshinShindoPlaceEditor
 			if (!TryLoadFile(path, out error, out report))
 				throw new InvalidDataException(error);
 			_draftPoints.Clear();
+			ModernDocumentId = Guid.NewGuid().ToString("N");
 			return report;
 		}
 

@@ -4,16 +4,17 @@
   const canvases = [$("known"), $("latest"), $("difference")];
   let points = [], frame = null, base = null, result = null, selection = null;
   let nextId = 1, activeId = 0, timeout = 0, scale = 1, center = [176, 200];
+  let selectedCode = null, candidates = [], visibleStations = [], documentId = null;
   const layers = { known: document.createElement("canvas"), difference: document.createElement("canvas") };
   for (const layer of Object.values(layers)) { layer.width = 352; layer.height = 400; }
   function notice(text, error = false) { $("notice").textContent = text; $("notice").classList.toggle("error", error); }
-  function busy(value) { for (const id of ["source", "refresh", "load", "snapshot"]) $(id).disabled = value; }
-  function request(action) {
+  function busy(value) { for (const id of ["source", "refresh", "load", "snapshot", "send-main"]) $(id).disabled = value; }
+  function request(action, extra = {}) {
     if (activeId) return;
     const id = nextId++; activeId = id; busy(true);
     notice(action === "refresh" ? "正在获取最新监测图片…" : "正在同步…");
     timeout = setTimeout(() => { activeId = 0; busy(false); notice("操作超时。当前画面未更新，可重试。", true); }, action === "loadImage" ? 300000 : 30000);
-    window.chrome.webview.postMessage({ id, action, source: $("source").value });
+    window.chrome.webview.postMessage({ id, action, source: $("source").value, ...extra });
   }
   function decode(source) { return new Promise((resolve, reject) => { const image = new Image(); image.onload = () => resolve(image); image.onerror = () => reject(new Error("无法解码监测图片。")); image.src = source; }); }
   window.chrome.webview.addEventListener("message", async event => {
@@ -22,6 +23,7 @@
     clearTimeout(timeout);
     try {
       if (data.error) throw new Error(data.error);
+      if (data.navigated) { notice("已传到主窗口，仅定位视图，不修改点位。"); return; }
       let nextFrame = frame;
       if (data.frame) {
         if (data.frame.source !== $("source").value) throw new Error("图片来源已变化，请重新获取。");
@@ -31,6 +33,8 @@
       }
       if (data.id !== activeId) return;
       points = data.state.points || []; frame = nextFrame;
+      if (documentId !== data.state.documentId) clearSelection();
+      documentId = data.state.documentId;
       $("file").textContent = data.state.path || "未保存的站点数据";
       $("stamp").textContent = frame ? formatStamp(frame.stamp) : "尚未获取图片";
       calculate();
@@ -49,6 +53,10 @@
     const context = capture.getContext("2d");
     if (frame) context.drawImage(frame.image, 0, 0);
     const comparison = api.compare(points, api.observedMask(context.getImageData(0, 0, 352, 400).data), options);
+    visibleStations = comparison.stations;
+    candidates = candidates.filter(code => visibleStations.some(p => p.code === code));
+    if (!visibleStations.some(p => p.code === selectedCode)) clearSelection();
+    else { selection = visibleStations.find(p => p.code === selectedCode).pixel; updateDetails(); }
     const known = layers.known.getContext("2d"), knownPixels = known.createImageData(352, 400);
     for (let i = 0; i < comparison.expected.length; i++) if (comparison.expected[i]) knownPixels.data.set([53, 108, 166, 255], i * 4);
     known.putImageData(knownPixels, 0, 0);
@@ -67,16 +75,17 @@
     $("missing-list").replaceChildren(); $("added-list").replaceChildren();
     $("missing-count").textContent = result ? `${result.missingStations.length} 站` : "";
     $("added-count").textContent = result ? `${result.additions.length} 处（非站点数量）` : "";
-    function entry(container, text, pixel) {
+    function entry(container, text, pixel, code = null) {
       const button = document.createElement("button"); button.textContent = text;
-      button.onclick = () => { center = pixel; selection = pixel; scale = 5; $("zoom").value = "5"; draw(); };
+      button.onclick = () => { clearSelection(); if (code) chooseStation(code); center = [pixel[0] + .5, pixel[1] + .5]; selection = pixel; scale = 5; $("zoom").value = "5"; draw(); };
       $(container).appendChild(button);
     }
     if (!result) return;
-    for (const p of result.missingStations) entry("missing-list", `${p.code} ${p.name}`, p.pixel);
+    for (const p of result.missingStations) entry("missing-list", `${p.code} ${p.name}`, p.pixel, p.code);
     for (const p of result.additions) entry("added-list", `(${p.x}, ${p.y}) · ${p.count} 像素`, [p.x, p.y]);
   }
   function draw() {
+    if (!selectedCode) $("point-info").textContent = `当前视图中心：${center[0].toFixed(2)}, ${center[1].toFixed(2)} · ${scale}×。点击左图点位查看信息；未选点时传递此视图。`;
     for (const canvas of canvases) {
       const rect = canvas.getBoundingClientRect(), ratio = devicePixelRatio || 1;
       canvas.width = Math.round(rect.width * ratio); canvas.height = Math.round(rect.height * ratio);
@@ -93,23 +102,68 @@
       }
     }
   }
+  function updateDetails() {
+    const point = visibleStations.find(p => p.code === selectedCode);
+    $("point-title").textContent = point ? `${point.code} · ${point.name}` : "未选择点位";
+    $("send-main").textContent = point ? "在主窗口查看此站" : "将当前视图传到主窗口";
+    $("clear-selection").disabled = !point;
+    if (point) {
+      const location = Number.isFinite(point.lat) && Number.isFinite(point.lon) ? `${point.lat.toFixed(5)}, ${point.lon.toFixed(5)}` : "未设置";
+      $("point-info").textContent = `${point.type} · ${point.region || "未指定地区"} · ${point.suspended ? "停用" : "启用"} · 经纬度：${location} · 图像坐标：${point.pixel.join(", ")}`;
+    }
+    $("point-candidates").replaceChildren();
+    if (candidates.length > 1) for (const code of candidates) {
+      const point = visibleStations.find(p => p.code === code);
+      if (!point) continue;
+      const button = document.createElement("button"); button.textContent = `${point.code} ${point.name}`;
+      button.setAttribute("aria-pressed", String(code === selectedCode));
+      button.onclick = () => { chooseStation(code); draw(); };
+      $("point-candidates").appendChild(button);
+    }
+  }
+  function clearSelection() { selectedCode = null; candidates = []; selection = null; updateDetails(); }
+  function chooseStation(code) { selectedCode = code; selection = visibleStations.find(p => p.code === code)?.pixel || null; updateDetails(); }
+  function imagePosition(canvas, event) {
+    const r = canvas.getBoundingClientRect();
+    return [center[0] + (event.clientX - r.left - r.width / 2) / scale, center[1] + (event.clientY - r.top - r.height / 2) / scale];
+  }
   for (const canvas of canvases) {
     let drag = null;
-    canvas.addEventListener("pointerdown", event => { drag = [event.clientX, event.clientY]; canvas.setPointerCapture(event.pointerId); });
+    canvas.addEventListener("pointerdown", event => {
+      if (event.button !== 0 && event.button !== 2) return;
+      drag = { x: event.clientX, y: event.clientY, startX: event.clientX, startY: event.clientY, moved: false, button: event.button };
+      canvas.setPointerCapture(event.pointerId);
+    });
     canvas.addEventListener("pointermove", event => {
-      if (drag) { center[0] -= (event.clientX - drag[0]) / scale; center[1] -= (event.clientY - drag[1]) / scale; drag = [event.clientX, event.clientY]; draw(); }
+      if (drag && (drag.moved || Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > 4)) {
+        center[0] -= (event.clientX - drag.x) / scale; center[1] -= (event.clientY - drag.y) / scale;
+        drag.x = event.clientX; drag.y = event.clientY; drag.moved = true; draw();
+      }
       const r = canvas.getBoundingClientRect(), x = Math.floor(center[0] + (event.clientX - r.left - r.width / 2) / scale), y = Math.floor(center[1] + (event.clientY - r.top - r.height / 2) / scale);
       $("pixel").textContent = `原图坐标：${x}, ${y}`;
     });
-    canvas.addEventListener("pointerup", () => { drag = null; }); canvas.addEventListener("pointercancel", () => { drag = null; });
+    canvas.addEventListener("pointerup", event => {
+      if (drag && !drag.moved && drag.button === 0 && canvas.id === "known") {
+        const [x,y] = imagePosition(canvas, event);
+        const hits = api.hitTest(visibleStations, x, y, scale);
+        candidates = hits.map(p => p.code);
+        if (hits.length) chooseStation(hits[0].code); else clearSelection();
+        draw();
+      }
+      drag = null;
+    });
+    canvas.addEventListener("pointercancel", () => { drag = null; });
+    canvas.addEventListener("lostpointercapture", () => { drag = null; });
     canvas.addEventListener("contextmenu", event => event.preventDefault());
     canvas.addEventListener("wheel", event => { event.preventDefault(); const levels = [1,2,3,5,10], i = levels.indexOf(scale); scale = levels[Math.max(0, Math.min(levels.length - 1, i + (event.deltaY < 0 ? 1 : -1)))]; $("zoom").value = String(scale); draw(); }, { passive: false });
   }
   $("refresh").onclick = () => request("refresh"); $("load").onclick = () => request("loadImage"); $("snapshot").onclick = () => request("snapshot");
-  $("source").onchange = () => { frame = null; selection = null; $("stamp").textContent = "来源已切换，等待新图片"; calculate(); request("refresh"); };
+  $("source").onchange = () => { frame = null; clearSelection(); $("stamp").textContent = "来源已切换，等待新图片"; calculate(); request("refresh"); };
   $("suspended").onchange = $("footprint").onchange = calculate;
   $("zoom").onchange = () => { scale = Number($("zoom").value); draw(); };
-  $("reset").onclick = () => { center = [176, 200]; scale = 1; selection = null; $("zoom").value = "1"; draw(); };
+  $("reset").onclick = () => { center = [176, 200]; scale = 1; clearSelection(); $("zoom").value = "1"; draw(); };
+  $("clear-selection").onclick = () => { clearSelection(); draw(); };
+  $("send-main").onclick = () => request("navigate", { documentId, code: selectedCode, x: center[0], y: center[1], scale });
   new ResizeObserver(draw).observe(document.querySelector("main"));
   decode("base-map.gif").then(image => { base = image; draw(); }).catch(() => notice("底图不可用；仍可比较监测像素。", true));
   request("ready");

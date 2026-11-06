@@ -14,6 +14,7 @@ internal static partial class EditorRegressionTests
     private static async Task VerifyComparisonWindow(ModernEditorForm editor, WebView2 editorBrowser)
     {
         var serializer = new JavaScriptSerializer();
+        Assert(await editorBrowser.ExecuteScriptAsync("document.getElementById('send-comparison').hidden") == "true", "Send button is visible without a comparison window.");
         await editorBrowser.CoreWebView2.CallDevToolsProtocolMethodAsync("Runtime.evaluate",
             serializer.Serialize(new { expression = "window.editorTest.command('compare')", awaitPromise = true, returnByValue = true }));
         var child = (Form)typeof(ModernEditorForm).GetField("_comparison", PrivateInstance).GetValue(editor);
@@ -74,6 +75,7 @@ internal static partial class EditorRegressionTests
             await browser.ExecuteScriptAsync("document.getElementById('source').value='borehole';document.getElementById('source').dispatchEvent(new Event('change'));");
             await wait("!document.getElementById('refresh').disabled && document.getElementById('missing').textContent !== '—'");
             Assert(await browser.ExecuteScriptAsync("!document.getElementById('notice').classList.contains('error')") == "true", "Borehole refresh failed.");
+            await VerifyEditorToComparison(editor, editorBrowser, child, browser, wait);
             var output = Path.Combine(tempDir, "comparison-after.json");
             Invoke(model, "ModernSave", output);
             Assert(Equivalent(JsonRows(original), JsonRows(output)), "Comparison modified station data.");
@@ -90,6 +92,45 @@ internal static partial class EditorRegressionTests
             Console.WriteLine("PASS Comparison window: separate form, native bridge, synthetic frame, timestamp, navigation, 900px layout, borehole, unchanged JSON");
         }
         finally { child.Close(); }
+        await Task.Delay(50);
+        Assert(await editorBrowser.ExecuteScriptAsync("document.getElementById('send-comparison').hidden") == "true", "Send button remains visible after comparison closes.");
+    }
+
+    private static async Task VerifyEditorToComparison(ModernEditorForm editor, WebView2 main, Form child, WebView2 comparison, Func<string, Task> wait)
+    {
+        var json = new JavaScriptSerializer();
+        var model = (MainForm)typeof(ModernEditorForm).GetField("_model", PrivateInstance).GetValue(editor);
+        Func<string, Task> evaluateMain = async expression => {
+            var result = await main.CoreWebView2.CallDevToolsProtocolMethodAsync("Runtime.evaluate",
+                json.Serialize(new { expression, awaitPromise = true, returnByValue = true }));
+            Assert(!Object(json.DeserializeObject(result)).ContainsKey("exceptionDetails"), "Main-to-comparison command failed: " + result);
+        };
+        await evaluateMain("window.editorTest.select('OKN006');window.editorTest.setZoom(4)");
+        Assert(await main.ExecuteScriptAsync("!document.getElementById('send-comparison').hidden && !document.getElementById('send-comparison').disabled") == "true", "Send button is unavailable for a known station.");
+        child.WindowState = FormWindowState.Minimized;
+        await evaluateMain("document.getElementById('send-comparison').click()");
+        await wait("document.getElementById('point-title').textContent.includes('OKN006')");
+        await Task.Delay(60);
+        Assert(child.WindowState != FormWindowState.Minimized && child.Owner == null && !child.TopMost, "Send failed to restore an independent comparison window.");
+        Assert(await comparison.ExecuteScriptAsync("document.getElementById('source').value==='borehole' && document.getElementById('zoom').value==='4' && document.getElementById('point-info').textContent.includes('图像坐标')") == "true", "Send changed source or lost zoom/details.");
+        Assert(await comparison.ExecuteScriptAsync("['known','latest','difference'].every(id=>{const c=document.getElementById(id),m=c.getContext('2d').getTransform(),p=m.transformPoint({x:86.5,y:140.5});return Math.abs(p.x-c.width/2)<1&&Math.abs(p.y-c.height/2)<1;})") == "true", "Known coordinates were not centered on all three maps.");
+        var beforeCount = await comparison.ExecuteScriptAsync("document.getElementById('stations').textContent");
+        await evaluateMain("window.editorTest.select('GIF001');document.getElementById('send-comparison').click()");
+        await wait("document.getElementById('point-title').textContent.includes('GIF001') && document.getElementById('point-info').textContent.includes('估算中心')");
+        Assert(await comparison.ExecuteScriptAsync("document.getElementById('stations').textContent") == beforeCount, "Estimate entered the comparison mask.");
+        await evaluateMain("window.editorTest.command('fillDrafts',{candidates:[{code:'GIF001',x:170,y:246}]})");
+        try
+        {
+            await evaluateMain("document.getElementById('send-comparison').click()");
+            await wait("document.getElementById('point-info').textContent.includes('待核对草稿') && document.getElementById('point-info').textContent.includes('170, 246')");
+            Assert(await comparison.ExecuteScriptAsync("document.getElementById('stations').textContent") == beforeCount, "Draft entered the comparison mask.");
+        }
+        finally
+        {
+            Invoke(model, "ModernUndo");
+            await evaluateMain("window.editorTest.command('ready')");
+        }
+        Console.WriteLine("PASS Editor to comparison: button lifecycle, known/draft/estimated coordinates, 4x, all canvases, source preservation, restore without topmost, no mask mutation");
     }
 
     private static async Task VerifyComparisonNavigation(ModernEditorForm editor, WebView2 main, WebView2 comparison, Func<string, Task> wait)

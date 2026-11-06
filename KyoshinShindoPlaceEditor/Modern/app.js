@@ -9,6 +9,7 @@
   let undoDepth = 0;
   let updatingNied = false;
   let testing = false;
+  let comparisonOpen = false;
   const pending = new Map();
   const images = {};
   const pointLayer = Object.assign(document.createElement("canvas"), { width: 352, height: 400 });
@@ -89,6 +90,10 @@
       $("image-status").textContent = imageWarning;
     }
     if (data.type === "notice") notice(data.text);
+    if (data.type === "comparisonAvailability") {
+      comparisonOpen = data.open === true;
+      updateComparisonAvailability();
+    }
     if (data.type === "comparisonNavigate") {
       applyState(data.state, data.dirty);
       geographicPreview = null; previewRevision++; updateGeographicPreview();
@@ -164,7 +169,19 @@
     $("fillDrafts").disabled = updatingNied || !points.some(point => !point.pixel && !point.draft);
     $("confirmDraft").disabled = updatingNied || !byCode.get(selected)?.draft;
     $("refresh").disabled = $("source").disabled = updatingNied;
+    updateComparisonAvailability();
   }
+
+  function updateComparisonAvailability() {
+    const point = byCode.get(selected), pixel = imagePixel(point) || estimatedPoint;
+    $("send-comparison").hidden = !comparisonOpen;
+    $("send-comparison").disabled = !comparisonOpen || updatingNied || !point || !pixel;
+    $("send-comparison").title = pixel ? "发送正式坐标、草稿或估算中心，仅用于定位" : "请先选择具有有效图像坐标或估算中心的站点";
+  }
+  $("send-comparison").onclick = () => {
+    const pixel = imagePixel(byCode.get(selected)) || estimatedPoint;
+    if (comparisonOpen && pixel) command("sendComparison", { code: selected, x: pixel[0], y: pixel[1], scale: monitor.scale }).catch(() => {});
+  };
 
   function rebuildLayers() {
     const upper = pointLayer.getContext("2d"), lower = geoLayer.getContext("2d");
@@ -256,6 +273,7 @@
     const point = byCode.get(selected);
     const estimate = point && !imagePixel(point) ? ImageCoordinates.latLonToImage(point.lat, point.lon) : null;
     estimatedPoint = ImageCoordinates.isInsideImage(estimate) ? [estimate.x, estimate.y] : null;
+    updateComparisonAvailability();
     $("clear").disabled = updatingNied || !imagePixel(point);
     $("clear").textContent = point?.draft ? "清除当前草稿" : "清除图像坐标";
     $("suspend").disabled = updatingNied || !point;

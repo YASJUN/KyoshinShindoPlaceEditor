@@ -20,6 +20,14 @@ namespace KyoshinShindoPlaceEditor
 		internal int ModernDraftCount => _points.Count(point => !point.Point.HasValue && _draftPoints.ContainsKey(point.Code));
 		internal bool ModernHasDraft(string code)
 			=> _draftPoints.ContainsKey(code) && _points.Any(point => point.Code == code && !point.Point.HasValue);
+		internal Point2? ModernComparisonPixel(string code)
+		{
+			var point = _points.FirstOrDefault(item => item.Code == code);
+			if (point == null) throw new InvalidDataException("找不到选中的站点。");
+			if (point.Point.HasValue) return point.Point;
+			DraftPoint draft;
+			return _draftPoints.TryGetValue(code, out draft) ? draft.Pixel : (Point2?)null;
+		}
 
 		internal void ModernFillDrafts(Dictionary<string, Point2> candidates)
 		{

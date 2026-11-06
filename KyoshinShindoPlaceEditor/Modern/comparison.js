@@ -5,6 +5,7 @@
   let points = [], frame = null, base = null, result = null, selection = null;
   let nextId = 1, activeId = 0, timeout = 0, scale = 1, center = [176, 200];
   let selectedCode = null, candidates = [], visibleStations = [], documentId = null;
+  let externalFocus = null;
   const layers = { known: document.createElement("canvas"), difference: document.createElement("canvas") };
   for (const layer of Object.values(layers)) { layer.width = 352; layer.height = 400; }
   function notice(text, error = false) { $("notice").textContent = text; $("notice").classList.toggle("error", error); }
@@ -19,6 +20,27 @@
   function decode(source) { return new Promise((resolve, reject) => { const image = new Image(); image.onload = () => resolve(image); image.onerror = () => reject(new Error("无法解码监测图片。")); image.src = source; }); }
   window.chrome.webview.addEventListener("message", async event => {
     const data = event.data;
+    if (data.type === "focusFromEditor") {
+      // A newer editor snapshot supersedes any outstanding comparison refresh.
+      clearTimeout(timeout); activeId = 0; busy(false); clearSelection();
+      points = data.state.points || []; documentId = data.state.documentId;
+      $("file").textContent = data.state.path || "未保存的站点数据";
+      calculate();
+      const point = points.find(p => p.code === data.code);
+      if (!point) { notice("站点已不存在，请重新同步。", true); return; }
+      externalFocus = { code: data.code, pixel: [data.x, data.y] };
+      selectedCode = data.code; selection = externalFocus.pixel;
+      center = [data.x + .5, data.y + .5];
+      // The main editor supports every integer zoom from 1 to 10.
+      scale = data.scale; $("zoom").value = String(scale);
+      updateDetails(); draw();
+      const kind = point.pixel ? "正式坐标" : point.draft ? "待核对草稿" : "估算中心";
+      notice(`已定位 ${point.code} 的${kind}。` + (visibleStations.some(p => p.code === point.code)
+        ? "保留当前监测图片，可刷新获取最新图片。"
+        : "此点未纳入当前对比统计，仅显示定位框；草稿/估算不是正式标注，停用筛选或地下来源也可能排除此站。"));
+      document.getElementById("known").scrollIntoView({ block: "nearest" });
+      return;
+    }
     if (data.id !== activeId) return;
     clearTimeout(timeout);
     try {
@@ -55,7 +77,9 @@
     const comparison = api.compare(points, api.observedMask(context.getImageData(0, 0, 352, 400).data), options);
     visibleStations = comparison.stations;
     candidates = candidates.filter(code => visibleStations.some(p => p.code === code));
-    if (!visibleStations.some(p => p.code === selectedCode)) clearSelection();
+    const focused = externalFocus && points.find(p => p.code === selectedCode);
+    if (focused) { selection = focused.pixel || focused.draft || externalFocus.pixel; externalFocus.pixel = selection; updateDetails(); }
+    else if (!visibleStations.some(p => p.code === selectedCode)) clearSelection();
     else { selection = visibleStations.find(p => p.code === selectedCode).pixel; updateDetails(); }
     const known = layers.known.getContext("2d"), knownPixels = known.createImageData(352, 400);
     for (let i = 0; i < comparison.expected.length; i++) if (comparison.expected[i]) knownPixels.data.set([53, 108, 166, 255], i * 4);
@@ -103,13 +127,15 @@
     }
   }
   function updateDetails() {
-    const point = visibleStations.find(p => p.code === selectedCode);
+    const point = (externalFocus ? points : visibleStations).find(p => p.code === selectedCode);
     $("point-title").textContent = point ? `${point.code} · ${point.name}` : "未选择点位";
     $("send-main").textContent = point ? "在主窗口查看此站" : "将当前视图传到主窗口";
     $("clear-selection").disabled = !point;
     if (point) {
       const location = Number.isFinite(point.lat) && Number.isFinite(point.lon) ? `${point.lat.toFixed(5)}, ${point.lon.toFixed(5)}` : "未设置";
-      $("point-info").textContent = `${point.type} · ${point.region || "未指定地区"} · ${point.suspended ? "停用" : "启用"} · 经纬度：${location} · 图像坐标：${point.pixel.join(", ")}`;
+      const pixel = point.pixel || point.draft || externalFocus?.pixel;
+      const label = point.pixel ? "图像坐标" : point.draft ? "待核对草稿（仅定位）" : "估算中心（仅定位）";
+      $("point-info").textContent = `${point.type} · ${point.region || "未指定地区"} · ${point.suspended ? "停用" : "启用"} · 经纬度：${location} · ${label}：${pixel.join(", ")}`;
     }
     $("point-candidates").replaceChildren();
     if (candidates.length > 1) for (const code of candidates) {
@@ -121,8 +147,8 @@
       $("point-candidates").appendChild(button);
     }
   }
-  function clearSelection() { selectedCode = null; candidates = []; selection = null; updateDetails(); }
-  function chooseStation(code) { selectedCode = code; selection = visibleStations.find(p => p.code === code)?.pixel || null; updateDetails(); }
+  function clearSelection() { externalFocus = null; selectedCode = null; candidates = []; selection = null; updateDetails(); }
+  function chooseStation(code) { externalFocus = null; selectedCode = code; selection = visibleStations.find(p => p.code === code)?.pixel || null; updateDetails(); }
   function imagePosition(canvas, event) {
     const r = canvas.getBoundingClientRect();
     return [center[0] + (event.clientX - r.left - r.width / 2) / scale, center[1] + (event.clientY - r.top - r.height / 2) / scale];
@@ -155,7 +181,7 @@
     canvas.addEventListener("pointercancel", () => { drag = null; });
     canvas.addEventListener("lostpointercapture", () => { drag = null; });
     canvas.addEventListener("contextmenu", event => event.preventDefault());
-    canvas.addEventListener("wheel", event => { event.preventDefault(); const levels = [1,2,3,5,10], i = levels.indexOf(scale); scale = levels[Math.max(0, Math.min(levels.length - 1, i + (event.deltaY < 0 ? 1 : -1)))]; $("zoom").value = String(scale); draw(); }, { passive: false });
+    canvas.addEventListener("wheel", event => { event.preventDefault(); scale = Math.max(1, Math.min(10, scale + (event.deltaY < 0 ? 1 : -1))); $("zoom").value = String(scale); draw(); }, { passive: false });
   }
   $("refresh").onclick = () => request("refresh"); $("load").onclick = () => request("loadImage"); $("snapshot").onclick = () => request("snapshot");
   $("source").onchange = () => { frame = null; clearSelection(); $("stamp").textContent = "来源已切换，等待新图片"; calculate(); request("refresh"); };

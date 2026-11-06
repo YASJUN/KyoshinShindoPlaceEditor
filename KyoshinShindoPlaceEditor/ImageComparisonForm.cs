@@ -16,6 +16,17 @@ namespace KyoshinShindoPlaceEditor
         private readonly Func<string, string, double, double, double, Task> _navigate;
         private Func<string, Task<MonitorFrame>> _download = MonitorImageClient.DownloadAsync;
         private readonly JavaScriptSerializer _json = new JavaScriptSerializer { MaxJsonLength = 16 * 1024 * 1024 };
+        private bool _ready;
+        private object _pendingFocus;
+
+        internal void FocusCoordinate(object state, string code, int x, int y, int scale)
+        {
+            var message = new { type = "focusFromEditor", state, code, x, y, scale };
+            if (_ready) Post(message);
+            else _pendingFocus = message;
+            if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
+            Activate();
+        }
 
         internal ImageComparisonForm(Func<object> snapshot, Func<string, string, double, double, double, Task> navigate)
         {
@@ -92,6 +103,11 @@ namespace KyoshinShindoPlaceEditor
                 }
                 else if (action != "ready" && action != "snapshot") throw new InvalidDataException("不支持的对比操作。");
                 if (!IsDisposed) Post(new { id, state = _snapshot(), frame });
+                if (action == "ready")
+                {
+                    _ready = true;
+                    if (_pendingFocus != null) { Post(_pendingFocus); _pendingFocus = null; }
+                }
             }
             catch (Exception ex) { Post(new { id, error = ex.GetBaseException().Message }); }
         }

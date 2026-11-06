@@ -80,7 +80,7 @@ namespace KyoshinShindoPlaceEditor
 
 		private void Post(object message)
 		{
-			if (!IsDisposed && _browser.CoreWebView2 != null)
+			if (!IsDisposed && !Disposing && _browser.CoreWebView2 != null)
 				_browser.CoreWebView2.PostWebMessageAsJson(_json.Serialize(message));
 		}
 
@@ -138,10 +138,23 @@ namespace KyoshinShindoPlaceEditor
 				if (_comparison == null || _comparison.IsDisposed)
 				{
 					_comparison = new ImageComparisonForm(() => _model.ModernState(), NavigateFromComparisonAsync);
+					_comparison.FormClosed += (sender, args) => Post(new { type = "comparisonAvailability", open = false });
 					_comparison.Show();
 				}
 				else { _comparison.WindowState = FormWindowState.Normal; _comparison.Activate(); }
+				Post(new { type = "comparisonAvailability", open = true });
 				return null;
+			}
+			if (action == "sendComparison")
+			{
+				if (_comparison == null || _comparison.IsDisposed) throw new InvalidOperationException("请先打开图像对比窗口。");
+				var code = (string)command["code"];
+				var pixel = _model.ModernComparisonPixel(code) ?? new Point2(Integer(command, "x"), Integer(command, "y"));
+				var scale = Integer(command, "scale");
+				if (!ObservationPointJsonDocument.IsInsideImage(pixel) || scale < 1 || scale > 10)
+					throw new InvalidOperationException("当前站点没有可用于对比的有效图像坐标。");
+				_comparison.FocusCoordinate(_model.ModernState(), code, pixel.X, pixel.Y, scale);
+				return "已将当前坐标发送到对比窗口，仅定位，不修改标注。";
 			}
 			if (action == "open" || action == "merge")
 			{
